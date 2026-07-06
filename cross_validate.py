@@ -5,7 +5,7 @@ import torch.optim as optim
 from sequence_builder import EXPERIMENT_MODE
 
 from torch.utils.data import DataLoader
-from sklearn.model_selection import StratifiedKFold
+from sklearn.model_selection import StratifiedKFold, train_test_split
 from sklearn.metrics import (
     roc_auc_score,
     f1_score,
@@ -116,12 +116,9 @@ def train_fold(
     train_labels,
     test_sequences,
     test_labels,
-    fold
+    fold,
+    vocab
 ):
-
-    vocab = build_vocab(
-        train_sequences
-    )
 
     train_dataset = MedicalDataset(
         train_sequences,
@@ -294,6 +291,22 @@ def main():
         "sequence_dataset.json"
     )
 
+    outer_train_sequences, outer_val_sequences, outer_train_labels, outer_val_labels = train_test_split(
+        sequences,
+        labels,
+        test_size=0.2,
+        stratify=labels,
+        random_state=42
+    )
+
+    print(
+        f"Total samples={len(sequences)}, "
+        f"outer train={len(outer_train_sequences)}, "
+        f"outer validation={len(outer_val_sequences)}"
+    )
+
+    vocab = build_vocab(outer_train_sequences)
+
     skf = StratifiedKFold(
         n_splits=N_SPLITS,
         shuffle=True,
@@ -305,28 +318,31 @@ def main():
     precisions = []
     recalls = []
 
+    best_cv_auc = -1.0
+    best_fold = None
+
     for fold, (train_idx, test_idx) in enumerate(
-        skf.split(sequences, labels),
+        skf.split(outer_train_sequences, outer_train_labels),
         start=1
     ):
 
         train_sequences = [
-            sequences[i]
+            outer_train_sequences[i]
             for i in train_idx
         ]
 
         train_labels = [
-            labels[i]
+            outer_train_labels[i]
             for i in train_idx
         ]
 
         test_sequences = [
-            sequences[i]
+            outer_train_sequences[i]
             for i in test_idx
         ]
 
         test_labels = [
-            labels[i]
+            outer_train_labels[i]
             for i in test_idx
         ]
 
@@ -340,13 +356,18 @@ def main():
             train_labels,
             test_sequences,
             test_labels,
-            fold
+            fold,
+            vocab
         )
 
         aucs.append(auc)
         f1s.append(f1)
         precisions.append(precision)
         recalls.append(recall)
+
+        if auc > best_cv_auc:
+            best_cv_auc = auc
+            best_fold = fold
 
     print("\n")
     print("="*50)
