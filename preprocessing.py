@@ -1,3 +1,4 @@
+import os
 import pandas as pd
 import numpy as np
 import re
@@ -10,18 +11,29 @@ def clean_text(text):
     return ' '.join(text.split())
 
 def main():
+    DUMMY = os.environ.get("DUMMY_MODE", "") == "1"
+    suffix = "_DUMMY" if DUMMY else ""
+    if DUMMY:
+        print("[DUMMY MODE] Using dummy CSV files.")
+
     print("Loading data...")
-    admissions = pd.read_csv('ADMISSIONS.csv')
-    patients = pd.read_csv('PATIENTS.csv')
-    labevents = pd.read_csv('LABEVENTS.csv')
-    d_labitems = pd.read_csv('D_LABITEMS.csv')
-    reports = pd.read_csv('structured_medical_records.csv')
+    admissions = pd.read_csv(f'ADMISSIONS{suffix}.csv')
+    patients   = pd.read_csv(f'PATIENTS{suffix}.csv')
+    labevents  = pd.read_csv(f'LABEVENTS{suffix}.csv')
+    d_labitems = pd.read_csv(f'D_LABITEMS{suffix}.csv')
+    reports    = pd.read_csv(f'structured_medical_records{suffix}.csv')
     
     print("Merging admissions and patients...")
     adm_pat = pd.merge(admissions, patients, on='subject_id', how='inner')
     adm_pat['admittime'] = pd.to_datetime(adm_pat['admittime'])
     adm_pat['dob'] = pd.to_datetime(adm_pat['dob'])
-    adm_pat['age'] = (adm_pat['admittime'] - adm_pat['dob']).dt.days / 365.25
+    # Compute age from year components to avoid int64 overflow on
+    # de-identified MIMIC-III DOBs (shifted ~300 years for patients >89).
+    adm_pat['age'] = (
+        adm_pat['admittime'].dt.year - adm_pat['dob'].dt.year
+        - ((adm_pat['admittime'].dt.month * 100 + adm_pat['admittime'].dt.day)
+           < (adm_pat['dob'].dt.month * 100 + adm_pat['dob'].dt.day)).astype(int)
+    )
     adm_pat.loc[adm_pat['age'] > 89, 'age'] = 90
     adm_pat['target'] = adm_pat['hospital_expire_flag']
     admissions_processed = adm_pat[['subject_id', 'hadm_id', 'admittime', 'dischtime', 'age', 'gender', 'admission_type', 'target']]

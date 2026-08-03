@@ -1,3 +1,4 @@
+import json
 import numpy as np
 import torch
 import torch.nn as nn
@@ -228,7 +229,10 @@ def train_fold(
             epochs_without_improvement = 0
 
             torch.save(
-                model.state_dict(),
+                {
+                    "model_state_dict": model.state_dict(),
+                    "vocab": vocab,
+                },
                 f"best_fold_{fold}.pth"
             )
 
@@ -245,11 +249,12 @@ def train_fold(
 
             break
 
+    checkpoint = torch.load(
+        f"best_fold_{fold}.pth",
+        map_location=DEVICE
+    )
     model.load_state_dict(
-        torch.load(
-            f"best_fold_{fold}.pth",
-            map_location=DEVICE
-        )
+        checkpoint["model_state_dict"]
     )
 
     (

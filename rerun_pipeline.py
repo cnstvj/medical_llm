@@ -6,6 +6,15 @@ import shutil
 import subprocess
 import sys
 
+# Ensure script runs from its own directory
+os.chdir(os.path.dirname(os.path.abspath(__file__)))
+
+DUMMY_MODE = "--dummy" in sys.argv
+
+if DUMMY_MODE:
+    print("[DUMMY MODE] Generating dummy CSV files...")
+    subprocess.run([sys.executable, "generate_dummy_data.py"], check=True)
+
 GENERATED_FILES = [
 "processed_admissions.csv",
 "processed_labevents.csv",
@@ -32,8 +41,13 @@ if os.path.exists("__pycache__"):
 
 print("\n===== RUNNING PREPROCESSING =====\n")
 
+preprocess_env = os.environ.copy()
+if DUMMY_MODE:
+    preprocess_env["DUMMY_MODE"] = "1"
+
 subprocess.run(
 [sys.executable, "preprocessing.py"],
+env=preprocess_env,
 check=True
 )
 
@@ -42,7 +56,7 @@ if not os.path.exists("quantiles.pkl"):
     "quantiles.pkl was not generated."
     )
 
-print("✓ quantiles.pkl created")
+print("[OK] quantiles.pkl created")
 
 print("\n===== RUNNING SEQUENCE BUILDER =====\n")
 
@@ -64,17 +78,20 @@ with open("sequence_dataset.json", "r") as f:
     print(f"Deaths    : {deaths}")
     print(f"Alive     : {alive}")
 
-    if total != 129:
-        print(
-        "\nWARNING:"
-        "\nExpected roughly 129 admissions."
-        )
+    if not DUMMY_MODE:
+        if total != 129:
+            print(
+            "\nWARNING:"
+            "\nExpected roughly 129 admissions."
+            )
 
-    if deaths != 40:
-        print(
-        "\nWARNING:"
-        "\nExpected roughly 40 deaths."
-        )
+        if deaths != 40:
+            print(
+            "\nWARNING:"
+            "\nExpected roughly 40 deaths."
+            )
+    else:
+        print("[DUMMY MODE] Skipping production dataset size checks.")
 
 print("\n===== RUNNING 5-FOLD CROSS VALIDATION =====\n")
 

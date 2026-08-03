@@ -38,13 +38,29 @@ class MedicalDataset(Dataset):
 
 def train_test_split_custom(seqs, labels, test_size=0.2, random_state=42):
     random.seed(random_state)
-    combined = list(zip(seqs, labels))
-    random.shuffle(combined)
 
-    split_idx = int(len(combined) * (1 - test_size))
+    # Stratified split: separate by class, shuffle each, then
+    # draw proportionally so both classes appear in every split.
+    class_0 = [(s, l) for s, l in zip(seqs, labels) if l == 0]
+    class_1 = [(s, l) for s, l in zip(seqs, labels) if l == 1]
 
-    train = combined[:split_idx]
-    test = combined[split_idx:]
+    random.shuffle(class_0)
+    random.shuffle(class_1)
+
+    split_0 = int(len(class_0) * (1 - test_size))
+    split_1 = max(1, int(len(class_1) * (1 - test_size)))  # at least 1 in train
+
+    train = class_0[:split_0] + class_1[:split_1]
+    test  = class_0[split_0:] + class_1[split_1:]
+
+    # Ensure test has at least 1 from each class
+    if not any(l == 1 for _, l in test) and len(class_1) > 1:
+        test.append(train.pop([i for i, (_, l) in enumerate(train) if l == 1][-1]))
+    if not any(l == 0 for _, l in test) and len(class_0) > 1:
+        test.append(train.pop([i for i, (_, l) in enumerate(train) if l == 0][-1]))
+
+    random.shuffle(train)
+    random.shuffle(test)
 
     seq_train, y_train = zip(*train)
     seq_test, y_test = zip(*test)
