@@ -10,6 +10,7 @@ import os
 import sys
 import glob
 import subprocess
+from datetime import datetime
 
 import numpy as np
 import torch
@@ -31,6 +32,17 @@ os.chdir(os.path.dirname(os.path.abspath(__file__)))
 DUMMY_MODE = "--dummy" in sys.argv
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 BATCH_SIZE = 32
+LOG_FILE = "log.txt"
+
+
+# ------------------------------------------------------------------
+# Logging Segment
+# ------------------------------------------------------------------
+def log_event(message=""):
+    """Prints message to stdout and appends to log.txt."""
+    print(message)
+    with open(LOG_FILE, "a", encoding="utf-8") as f:
+        f.write(message + "\n")
 
 
 # ------------------------------------------------------------------
@@ -42,7 +54,7 @@ def prepare_data():
     env = os.environ.copy()
 
     if DUMMY_MODE:
-        print("[DUMMY MODE] Generating dummy CSV files...")
+        log_event("[DUMMY MODE] Generating dummy CSV files...")
         subprocess.run(
             [sys.executable, "generate_dummy_data.py"],
             check=True,
@@ -50,13 +62,13 @@ def prepare_data():
         env["DUMMY_MODE"] = "1"
 
     if not os.path.exists("sequence_dataset.json"):
-        print("Running preprocessing...")
+        log_event("Running preprocessing...")
         subprocess.run(
             [sys.executable, "preprocessing.py"],
             env=env,
             check=True,
         )
-        print("Running sequence builder...")
+        log_event("Running sequence builder...")
         subprocess.run(
             [sys.executable, "sequence_builder.py"],
             check=True,
@@ -123,17 +135,17 @@ def compute_metrics(probs, labels):
 
 def print_metrics(metrics, header=""):
     if header:
-        print(f"\n{'='*40}")
-        print(header)
-        print("=" * 40)
+        log_event(f"\n{'='*40}")
+        log_event(header)
+        log_event("=" * 40)
 
-    print(f"AUROC     : {metrics['auroc']:.4f}")
-    print(f"F1        : {metrics['f1']:.4f}")
-    print(f"Precision : {metrics['precision']:.4f}")
-    print(f"Recall    : {metrics['recall']:.4f}")
-    print(f"Threshold : {metrics['threshold']:.2f}")
-    print(f"\nConfusion Matrix")
-    print(metrics["confusion_matrix"])
+    log_event(f"AUROC     : {metrics['auroc']:.4f}")
+    log_event(f"F1        : {metrics['f1']:.4f}")
+    log_event(f"Precision : {metrics['precision']:.4f}")
+    log_event(f"Recall    : {metrics['recall']:.4f}")
+    log_event(f"Threshold : {metrics['threshold']:.2f}")
+    log_event(f"\nConfusion Matrix")
+    log_event(str(metrics["confusion_matrix"]))
 
 
 # ------------------------------------------------------------------
@@ -141,9 +153,11 @@ def print_metrics(metrics, header=""):
 # ------------------------------------------------------------------
 def main():
     mode_label = "DUMMY" if DUMMY_MODE else "REAL"
-    print(f"\n{'='*50}")
-    print(f"EVALUATING SAVED MODELS ON {mode_label} DATASET")
-    print(f"{'='*50}\n")
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    log_event(f"\n{'='*60}")
+    log_event(f"[{timestamp}] EVENT: TEST EVALUATION RUN ({mode_label} DATASET)")
+    log_event(f"{'='*60}\n")
 
     # Locate saved models (fold checkpoints + standalone best_model)
     fold_models = sorted(glob.glob("best_fold_*.pth"))
@@ -151,12 +165,12 @@ def main():
         fold_models.append("best_model.pth")
 
     if not fold_models:
-        print("ERROR: No saved models found (best_fold_*.pth or best_model.pth).")
-        print("Run  python train.py  or  python rerun_pipeline.py  first.")
+        log_event("ERROR: No saved models found (best_fold_*.pth or best_model.pth).")
+        log_event("Run  python train.py  or  python rerun_pipeline.py  first.")
         sys.exit(1)
 
-    print(f"Found {len(fold_models)} saved model(s): "
-          f"{', '.join(os.path.basename(m) for m in fold_models)}\n")
+    log_event(f"Found {len(fold_models)} saved model(s): "
+              f"{', '.join(os.path.basename(m) for m in fold_models)}\n")
 
     # Prepare dataset
     prepare_data()
@@ -165,7 +179,7 @@ def main():
 
     total = len(labels)
     deaths = sum(labels)
-    print(f"Dataset : {total} sequences  |  {deaths} deaths  |  {total - deaths} alive\n")
+    log_event(f"Dataset : {total} sequences  |  {deaths} deaths  |  {total - deaths} alive\n")
 
     # Evaluate each fold model
     all_aucs = []
@@ -205,15 +219,15 @@ def main():
 
     # Summary
     if len(fold_models) > 1:
-        print(f"\n\n{'='*50}")
-        print(f"ENSEMBLE SUMMARY ({len(fold_models)} models)")
-        print("=" * 50)
-        print(f"Mean AUROC     : {np.mean(all_aucs):.4f} +/- {np.std(all_aucs):.4f}")
-        print(f"Mean F1        : {np.mean(all_f1s):.4f} +/- {np.std(all_f1s):.4f}")
-        print(f"Mean Precision : {np.mean(all_precisions):.4f}")
-        print(f"Mean Recall    : {np.mean(all_recalls):.4f}")
+        log_event(f"\n\n{'='*50}")
+        log_event(f"ENSEMBLE SUMMARY ({len(fold_models)} models)")
+        log_event("=" * 50)
+        log_event(f"Mean AUROC     : {np.mean(all_aucs):.4f} +/- {np.std(all_aucs):.4f}")
+        log_event(f"Mean F1        : {np.mean(all_f1s):.4f} +/- {np.std(all_f1s):.4f}")
+        log_event(f"Mean Precision : {np.mean(all_precisions):.4f}")
+        log_event(f"Mean Recall    : {np.mean(all_recalls):.4f}")
 
-    print(f"\nDone.")
+    log_event(f"\nDone.\n")
 
 
 if __name__ == "__main__":

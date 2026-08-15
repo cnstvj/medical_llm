@@ -148,11 +148,12 @@ def train_fold(
         len(vocab)
     ).to(DEVICE)
 
-    pos = sum(train_labels)
-    neg = len(train_labels) - pos
+    num_positive = sum(train_labels)
+    num_negative = len(train_labels) - num_positive
 
     pos_weight = torch.tensor(
-        [neg / max(pos, 1)],
+        [num_negative / max(num_positive, 1)],
+        dtype=torch.float32,
         device=DEVICE
     )
 

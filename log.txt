@@ -1,0 +1,420 @@
+# Log File
+# Logs from train.py and test.py execution will be appended below.
+
+==================================================
+[2026-08-03 22:19:52] EVENT: TRAIN PIPELINE RUN (REAL DATASET)
+==================================================
+
+Training samples: 40 (Pos: 16, Neg: 24)
+Class imbalance weight (pos_weight): 1.5000
+
+Epoch  1/10: AUROC=0.8333 F1=0.0000
+Epoch  2/10: AUROC=1.0000 F1=0.5714
+Epoch  3/10: AUROC=1.0000 F1=0.5714
+Epoch  4/10: AUROC=1.0000 F1=0.0000
+Epoch  5/10: AUROC=1.0000 F1=0.0000
+Epoch  6/10: AUROC=1.0000 F1=0.0000
+Epoch  7/10: AUROC=1.0000 F1=0.0000
+Epoch  8/10: AUROC=1.0000 F1=0.0000
+Epoch  9/10: AUROC=0.8333 F1=0.5714
+Epoch 10/10: AUROC=1.0000 F1=0.5714
+
+TEST RESULT: AUROC=1.0000 F1=0.5714
+Model saved to best_model.pth
+
+
+============================================================
+[2026-08-03 22:20:00] EVENT: TEST EVALUATION RUN (REAL DATASET)
+============================================================
+
+Found 6 saved model(s): best_fold_1.pth, best_fold_2.pth, best_fold_3.pth, best_fold_4.pth, best_fold_5.pth, best_model.pth
+
+Dataset : 50 sequences  |  20 deaths  |  30 alive
+
+
+========================================
+BEST_FOLD_1 RESULTS
+========================================
+AUROC     : 0.5217
+F1        : 0.5714
+Precision : 0.4000
+Recall    : 1.0000
+Threshold : 0.05
+
+Confusion Matrix
+[[ 0 30]
+ [ 0 20]]
+
+========================================
+BEST_FOLD_2 RESULTS
+========================================
+AUROC     : 0.6417
+F1        : 0.5882
+Precision : 0.4167
+Recall    : 1.0000
+Threshold : 0.30
+
+Confusion Matrix
+[[ 2 28]
+ [ 0 20]]
+
+========================================
+BEST_FOLD_3 RESULTS
+========================================
+AUROC     : 0.5817
+F1        : 0.5938
+Precision : 0.4318
+Recall    : 0.9500
+Threshold : 0.15
+
+Confusion Matrix
+[[ 5 25]
+ [ 1 19]]
+
+========================================
+BEST_FOLD_4 RESULTS
+========================================
+AUROC     : 0.6550
+F1        : 0.5714
+Precision : 0.4000
+Recall    : 1.0000
+Threshold : 0.05
+
+Confusion Matrix
+[[ 0 30]
+ [ 0 20]]
+
+========================================
+BEST_FOLD_5 RESULTS
+========================================
+AUROC     : 0.5933
+F1        : 0.5714
+Precision : 0.4000
+Recall    : 1.0000
+Threshold : 0.05
+
+Confusion Matrix
+[[ 0 30]
+ [ 0 20]]
+
+========================================
+BEST_MODEL RESULTS
+========================================
+AUROC     : 0.7233
+F1        : 0.6441
+Precision : 0.4872
+Recall    : 0.9500
+Threshold : 0.80
+
+Confusion Matrix
+[[10 20]
+ [ 1 19]]
+
+
+==================================================
+ENSEMBLE SUMMARY (6 models)
+==================================================
+Mean AUROC     : 0.6194 +/- 0.0635
+Mean F1        : 0.5901 +/- 0.0257
+Mean Precision : 0.4226
+Mean Recall    : 0.9833
+
+Done.
+
+
+============================================================
+[2026-08-14 11:24:52] EVENT: TEST EVALUATION RUN (REAL DATASET)
+============================================================
+
+Found 6 saved model(s): best_fold_1.pth, best_fold_2.pth, best_fold_3.pth, best_fold_4.pth, best_fold_5.pth, best_model.pth
+
+Dataset : 129 sequences  |  40 deaths  |  89 alive
+
+
+========================================
+BEST_FOLD_1 RESULTS
+========================================
+AUROC     : 0.9421
+F1        : 0.9091
+Precision : 0.9459
+Recall    : 0.8750
+Threshold : 0.75
+
+Confusion Matrix
+[[87  2]
+ [ 5 35]]
+
+========================================
+BEST_FOLD_2 RESULTS
+========================================
+AUROC     : 0.9598
+F1        : 0.8889
+Precision : 0.8780
+Recall    : 0.9000
+Threshold : 0.90
+
+Confusion Matrix
+[[84  5]
+ [ 4 36]]
+
+========================================
+BEST_FOLD_3 RESULTS
+========================================
+AUROC     : 0.9522
+F1        : 0.9250
+Precision : 0.9250
+Recall    : 0.9250
+Threshold : 0.05
+
+Confusion Matrix
+[[86  3]
+ [ 3 37]]
+
+========================================
+BEST_FOLD_4 RESULTS
+========================================
+AUROC     : 0.9736
+F1        : 0.9189
+Precision : 1.0000
+Recall    : 0.8500
+Threshold : 0.10
+
+Confusion Matrix
+[[89  0]
+ [ 6 34]]
+
+========================================
+BEST_FOLD_5 RESULTS
+========================================
+AUROC     : 0.8961
+F1        : 0.7297
+Precision : 0.7941
+Recall    : 0.6750
+Threshold : 0.40
+
+Confusion Matrix
+[[82  7]
+ [13 27]]
+
+========================================
+BEST_MODEL RESULTS
+========================================
+AUROC     : 0.7683
+F1        : 0.6364
+Precision : 0.5833
+Recall    : 0.7000
+Threshold : 0.70
+
+Confusion Matrix
+[[69 20]
+ [12 28]]
+
+
+==================================================
+ENSEMBLE SUMMARY (6 models)
+==================================================
+Mean AUROC     : 0.9154 +/- 0.0701
+Mean F1        : 0.8347 +/- 0.1111
+Mean Precision : 0.8544
+Mean Recall    : 0.8208
+
+Done.
+
+
+============================================================
+[2026-08-14 11:25:08] EVENT: TEST EVALUATION RUN (REAL DATASET)
+============================================================
+
+Found 6 saved model(s): best_fold_1.pth, best_fold_2.pth, best_fold_3.pth, best_fold_4.pth, best_fold_5.pth, best_model.pth
+
+Dataset : 129 sequences  |  40 deaths  |  89 alive
+
+
+========================================
+BEST_FOLD_1 RESULTS
+========================================
+AUROC     : 0.9421
+F1        : 0.9091
+Precision : 0.9459
+Recall    : 0.8750
+Threshold : 0.75
+
+Confusion Matrix
+[[87  2]
+ [ 5 35]]
+
+========================================
+BEST_FOLD_2 RESULTS
+========================================
+AUROC     : 0.9598
+F1        : 0.8889
+Precision : 0.8780
+Recall    : 0.9000
+Threshold : 0.90
+
+Confusion Matrix
+[[84  5]
+ [ 4 36]]
+
+========================================
+BEST_FOLD_3 RESULTS
+========================================
+AUROC     : 0.9522
+F1        : 0.9250
+Precision : 0.9250
+Recall    : 0.9250
+Threshold : 0.05
+
+Confusion Matrix
+[[86  3]
+ [ 3 37]]
+
+========================================
+BEST_FOLD_4 RESULTS
+========================================
+AUROC     : 0.9736
+F1        : 0.9189
+Precision : 1.0000
+Recall    : 0.8500
+Threshold : 0.10
+
+Confusion Matrix
+[[89  0]
+ [ 6 34]]
+
+========================================
+BEST_FOLD_5 RESULTS
+========================================
+AUROC     : 0.8961
+F1        : 0.7297
+Precision : 0.7941
+Recall    : 0.6750
+Threshold : 0.40
+
+Confusion Matrix
+[[82  7]
+ [13 27]]
+
+========================================
+BEST_MODEL RESULTS
+========================================
+AUROC     : 0.7683
+F1        : 0.6364
+Precision : 0.5833
+Recall    : 0.7000
+Threshold : 0.70
+
+Confusion Matrix
+[[69 20]
+ [12 28]]
+
+
+==================================================
+ENSEMBLE SUMMARY (6 models)
+==================================================
+Mean AUROC     : 0.9154 +/- 0.0701
+Mean F1        : 0.8347 +/- 0.1111
+Mean Precision : 0.8544
+Mean Recall    : 0.8208
+
+Done.
+
+
+============================================================
+[2026-08-14 11:25:17] EVENT: TEST EVALUATION RUN (REAL DATASET)
+============================================================
+
+Found 6 saved model(s): best_fold_1.pth, best_fold_2.pth, best_fold_3.pth, best_fold_4.pth, best_fold_5.pth, best_model.pth
+
+Dataset : 129 sequences  |  40 deaths  |  89 alive
+
+
+========================================
+BEST_FOLD_1 RESULTS
+========================================
+AUROC     : 0.9421
+F1        : 0.9091
+Precision : 0.9459
+Recall    : 0.8750
+Threshold : 0.75
+
+Confusion Matrix
+[[87  2]
+ [ 5 35]]
+
+========================================
+BEST_FOLD_2 RESULTS
+========================================
+AUROC     : 0.9598
+F1        : 0.8889
+Precision : 0.8780
+Recall    : 0.9000
+Threshold : 0.90
+
+Confusion Matrix
+[[84  5]
+ [ 4 36]]
+
+========================================
+BEST_FOLD_3 RESULTS
+========================================
+AUROC     : 0.9522
+F1        : 0.9250
+Precision : 0.9250
+Recall    : 0.9250
+Threshold : 0.05
+
+Confusion Matrix
+[[86  3]
+ [ 3 37]]
+
+========================================
+BEST_FOLD_4 RESULTS
+========================================
+AUROC     : 0.9736
+F1        : 0.9189
+Precision : 1.0000
+Recall    : 0.8500
+Threshold : 0.10
+
+Confusion Matrix
+[[89  0]
+ [ 6 34]]
+
+========================================
+BEST_FOLD_5 RESULTS
+========================================
+AUROC     : 0.8961
+F1        : 0.7297
+Precision : 0.7941
+Recall    : 0.6750
+Threshold : 0.40
+
+Confusion Matrix
+[[82  7]
+ [13 27]]
+
+========================================
+BEST_MODEL RESULTS
+========================================
+AUROC     : 0.7683
+F1        : 0.6364
+Precision : 0.5833
+Recall    : 0.7000
+Threshold : 0.70
+
+Confusion Matrix
+[[69 20]
+ [12 28]]
+
+
+==================================================
+ENSEMBLE SUMMARY (6 models)
+==================================================
+Mean AUROC     : 0.9154 +/- 0.0701
+Mean F1        : 0.8347 +/- 0.1111
+Mean Precision : 0.8544
+Mean Recall    : 0.8208
+
+Done.
+

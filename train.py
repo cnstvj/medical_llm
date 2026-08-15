@@ -1,4 +1,4 @@
-# This is a new branch
+# train.py
 
 import math
 import torch
@@ -7,6 +7,7 @@ import torch.optim as optim
 import sys
 import os
 import subprocess
+from datetime import datetime
 
 from dataset import get_dataloaders
 from model import MedicalTransformer
@@ -16,6 +17,17 @@ from sklearn.metrics import roc_auc_score, f1_score
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
 DUMMY_MODE = "--dummy" in sys.argv
+LOG_FILE = "log.txt"
+
+
+# ------------------------------------------------------------------
+# Logging Segment
+# ------------------------------------------------------------------
+def log_event(message=""):
+    """Prints message to stdout and appends to log.txt."""
+    print(message)
+    with open(LOG_FILE, "a", encoding="utf-8") as f:
+        f.write(message + "\n")
 
 
 def prepare_data():
@@ -23,7 +35,7 @@ def prepare_data():
 
     env = os.environ.copy()
     if DUMMY_MODE:
-        print("[DUMMY MODE] Generating dummy CSV files...")
+        log_event("[DUMMY MODE] Generating dummy CSV files...")
         subprocess.run(
             [sys.executable, "generate_dummy_data.py"],
             check=True
@@ -31,13 +43,13 @@ def prepare_data():
         env["DUMMY_MODE"] = "1"
 
     if not os.path.exists("sequence_dataset.json"):
-        print("Running preprocessing...")
+        log_event("Running preprocessing...")
         subprocess.run(
             [sys.executable, "preprocessing.py"],
             env=env,
             check=True
         )
-        print("Running sequence builder...")
+        log_event("Running sequence builder...")
         subprocess.run(
             [sys.executable, "sequence_builder.py"],
             check=True
@@ -71,13 +83,17 @@ def evaluate(model, loader, device):
 
     return auc, f1_score(labels, preds, zero_division=0)
 
+
 def train():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     mode_label = "DUMMY" if DUMMY_MODE else "REAL"
-    print(f"\n{'='*50}")
-    print(f"TRAINING ON {mode_label} DATASET")
-    print(f"{'='*50}\n")
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    # Logging event start
+    log_event("\n" + "=" * 50)
+    log_event(f"[{timestamp}] EVENT: TRAIN PIPELINE RUN ({mode_label} DATASET)")
+    log_event("=" * 50 + "\n")
 
     prepare_data()
 
@@ -88,10 +104,10 @@ def train():
     model = MedicalTransformer(len(vocab)).to(device)
 
     labels = train_loader.dataset.labels
-    pos = sum(labels)
-    neg = len(labels) - pos
+    num_positive = sum(labels)
+    num_negative = len(labels) - num_positive
 
-    pos_weight = torch.tensor([neg/max(pos,1)], device=device)
+    pos_weight = torch.tensor([num_negative / max(num_positive, 1)], dtype=torch.float32, device=device)
 
     criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
 
@@ -100,6 +116,9 @@ def train():
         lr=1e-3,
         weight_decay=1e-4
     )
+
+    log_event(f"Training samples: {len(labels)} (Pos: {num_positive}, Neg: {num_negative})")
+    log_event(f"Class imbalance weight (pos_weight): {pos_weight.item():.4f}\n")
 
     best_auc = -1
 
@@ -119,7 +138,7 @@ def train():
 
         val_auc, val_f1 = evaluate(model, val_loader, device)
 
-        print(f"Epoch {epoch+1}: AUROC={val_auc:.4f} F1={val_f1:.4f}")
+        log_event(f"Epoch {epoch+1:2d}/10: AUROC={val_auc:.4f} F1={val_f1:.4f}")
 
         if val_auc > best_auc:
             best_auc = val_auc
@@ -136,7 +155,9 @@ def train():
         model.load_state_dict(checkpoint)
 
     test_auc, test_f1 = evaluate(model, test_loader, device)
-    print(f"\nTEST AUROC={test_auc:.4f} F1={test_f1:.4f}")
+    log_event(f"\nTEST RESULT: AUROC={test_auc:.4f} F1={test_f1:.4f}")
+    log_event("Model saved to best_model.pth\n")
+
 
 if __name__ == "__main__":
     train()
