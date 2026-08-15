@@ -418,3 +418,90 @@ Mean Recall    : 0.8208
 
 Done.
 
+[DUMMY MODE] Generating dummy CSV files...
+
+============================================================
+[2026-08-15 14:19:44] EVENT: TEST EVALUATION RUN (DUMMY DATASET)
+============================================================
+
+Found 5 saved model(s): best_fold_1.pth, best_fold_2.pth, best_fold_3.pth, best_fold_4.pth, best_fold_5.pth
+
+Dataset : 50 sequences  |  20 deaths  |  30 alive
+
+
+========================================
+BEST_FOLD_1 RESULTS
+========================================
+AUROC     : 0.7283
+F1        : 0.6452
+Precision : 0.4762
+Recall    : 1.0000
+Threshold : 0.70
+
+Confusion Matrix
+[[ 8 22]
+ [ 0 20]]
+
+========================================
+BEST_FOLD_2 RESULTS
+========================================
+AUROC     : 0.6200
+F1        : 0.5882
+Precision : 0.4167
+Recall    : 1.0000
+Threshold : 0.55
+
+Confusion Matrix
+[[ 2 28]
+ [ 0 20]]
+
+========================================
+BEST_FOLD_3 RESULTS
+========================================
+AUROC     : 0.6050
+F1        : 0.6000
+Precision : 0.4500
+Recall    : 0.9000
+Threshold : 0.25
+
+Confusion Matrix
+[[ 8 22]
+ [ 2 18]]
+
+========================================
+BEST_FOLD_4 RESULTS
+========================================
+AUROC     : 0.4750
+F1        : 0.5714
+Precision : 0.4000
+Recall    : 1.0000
+Threshold : 0.05
+
+Confusion Matrix
+[[ 0 30]
+ [ 0 20]]
+
+========================================
+BEST_FOLD_5 RESULTS
+========================================
+AUROC     : 0.6200
+F1        : 0.5714
+Precision : 0.4000
+Recall    : 1.0000
+Threshold : 0.05
+
+Confusion Matrix
+[[ 0 30]
+ [ 0 20]]
+
+
+==================================================
+ENSEMBLE SUMMARY (5 models)
+==================================================
+Mean AUROC     : 0.6097 +/- 0.0806
+Mean F1        : 0.5953 +/- 0.0272
+Mean Precision : 0.4286
+Mean Recall    : 0.9800
+
+Done.
+

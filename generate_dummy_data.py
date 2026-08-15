@@ -5,7 +5,7 @@ Generates small dummy CSV files that mirror the real MIMIC-III schema so the
 full pipeline (preprocessing → sequence_builder → cross_validate) can be tested
 quickly without the production dataset.
 
-Files produced (all in the same directory as this script):
+Files produced:
     ADMISSIONS_DUMMY.csv
     PATIENTS_DUMMY.csv
     LABEVENTS_DUMMY.csv
@@ -207,17 +207,17 @@ def make_reports(admissions: pd.DataFrame) -> pd.DataFrame:
         for day in range(n_notes):
             note_time = pd.to_datetime(adm["admittime"]) + timedelta(days=day)
             report = (
-                f"Patient ID: {adm['subject_id']}\\r\\n"
-                f"    Admission Date: {pd.to_datetime(adm['admittime']).date()}\\r\\n"
-                f"    Admission Type: {adm['admission_type']}\\r\\n"
-                f"    Diagnosis: {adm['diagnosis']}\\r\\n"
-                f"    **Lab Results:**\\r\\n"
+                f"Patient ID: {adm['subject_id']}\r\n"
+                f"    Admission Date: {pd.to_datetime(adm['admittime']).date()}\r\n"
+                f"    Admission Type: {adm['admission_type']}\r\n"
+                f"    Diagnosis: {adm['diagnosis']}\r\n"
+                f"    **Lab Results:**\r\n"
                 f"    - Glucose: {round(random.uniform(70, 250), 1)} mg/dL "
-                f"({'abnormal' if random.random() > 0.5 else 'normal'})\\r\\n"
+                f"({'abnormal' if random.random() > 0.5 else 'normal'})\r\n"
                 f"    - Hemoglobin: {round(random.uniform(7, 16), 1)} g/dL "
-                f"({'abnormal' if random.random() > 0.5 else 'normal'})\\r\\n"
+                f"({'abnormal' if random.random() > 0.5 else 'normal'})\r\n"
                 f"    - White Blood Cells: {round(random.uniform(3, 20), 1)} K/uL "
-                f"({'abnormal' if random.random() > 0.5 else 'normal'})\\r\\n"
+                f"({'abnormal' if random.random() > 0.5 else 'normal'})\r\n"
             )
             rows.append({
                 "subject_id":     adm["subject_id"],
