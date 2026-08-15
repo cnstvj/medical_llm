@@ -6,6 +6,7 @@ from medical_llm.utils.logging import log_event
 from medical_llm.utils.quantiles import (
     fit_quantiles,
     apply_quantile,
+    apply_quantiles_to_labevents,
     save_quantiles,
     load_quantiles,
 )
@@ -14,6 +15,7 @@ __all__ = [
     "log_event",
     "fit_quantiles",
     "apply_quantile",
+    "apply_quantiles_to_labevents",
     "save_quantiles",
     "load_quantiles",
 ]

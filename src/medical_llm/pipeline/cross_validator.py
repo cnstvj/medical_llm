@@ -1,8 +1,10 @@
 """
 Cross-validation engine for Stratified 5-Fold training and evaluation.
+Implements leak-free fold processing (quantiles and vocab fitted strictly per fold).
 """
 
 from typing import Tuple, List
+import pandas as pd
 import numpy as np
 import torch
 import torch.nn as nn
@@ -18,7 +20,10 @@ from sklearn.metrics import (
 )
 
 from medical_llm.config import DEFAULT_CONFIG, PipelineConfig
-from medical_llm.data.dataset import MedicalDataset, build_vocab, load_dataset_json
+from medical_llm.data.preprocessing import load_raw_tables
+from medical_llm.utils.quantiles import fit_quantiles, apply_quantiles_to_labevents
+from medical_llm.data.sequence_builder import build_temporal_sequences
+from medical_llm.data.dataset import MedicalDataset, build_vocab
 from medical_llm.models.transformer import MedicalTransformer
 
 
@@ -63,6 +68,52 @@ def evaluate_fold(
     cm = confusion_matrix(labels, preds)
 
     return auc, best_f1, precision, recall, best_threshold, cm
+
+
+def build_fold_sequences(
+    admissions_df: pd.DataFrame,
+    labevents_processed: pd.DataFrame,
+    reports_df: pd.DataFrame,
+    experiment_mode: str = "FULL",
+) -> Tuple[List[List[str]], List[int]]:
+    """Builds token sequences and target labels for a specific fold dataframe."""
+    labevents = labevents_processed.copy()
+    labevents["charttime"] = pd.to_datetime(labevents["charttime"])
+    labevents = labevents.sort_values(by=["hadm_id", "charttime"])
+
+    grouped = build_temporal_sequences(labevents, experiment_mode=experiment_mode)
+
+    df = pd.merge(admissions_df, grouped, on="hadm_id", how="left")
+    df["event_token"] = df["event_token"].apply(lambda x: x if isinstance(x, list) else [])
+    df = pd.merge(df, reports_df, on="hadm_id", how="left")
+
+    sequences = []
+    labels = []
+
+    for _, row in df.iterrows():
+        age_bucket = int(row["age"] // 10) * 10 if pd.notnull(row["age"]) else 0
+        age_token = f"AGE_{age_bucket}"
+        gender_token = f"GENDER_{row['gender']}"
+        adm_type_token = f"ADM_{str(row['admission_type']).replace(' ', '_')}"
+
+        seq = []
+
+        if experiment_mode in ("DEMOGRAPHICS", "FULL"):
+            seq.extend([age_token, gender_token, adm_type_token])
+
+        if experiment_mode in ("LABS", "TEMPORAL", "FULL"):
+            seq.append("[SEP]")
+            seq.extend(row["event_token"])
+
+        if experiment_mode in ("NOTES", "FULL"):
+            if pd.notnull(row["clean_text"]) and str(row["clean_text"]).strip() != "":
+                seq.append("[REPORT_START]")
+                seq.extend(row["clean_text"].split())
+
+        sequences.append(seq)
+        labels.append(int(row["target"]) if pd.notnull(row["target"]) else 0)
+
+    return sequences, labels
 
 
 def train_fold(
@@ -122,7 +173,7 @@ def train_fold(
 
         val_auc, _, _, _, _, _ = evaluate_fold(model, test_loader, device)
 
-        print(f"Fold {fold} Epoch {epoch+1:2d} Loss={total_loss:.4f} Val_AUROC={val_auc:.4f}")
+        print(f"Fold {fold} Epoch {epoch+1:2d} Loss={total_loss:.4f} Val_AUROC={val_auc:.4f}", flush=True)
 
         if val_auc > best_auc:
             best_auc = val_auc
@@ -138,7 +189,7 @@ def train_fold(
             epochs_without_improvement += 1
 
         if epochs_without_improvement >= config.patience:
-            print(f"Early stopping (Fold {fold})")
+            print(f"Early stopping (Fold {fold})", flush=True)
             break
 
     checkpoint = torch.load(f"best_fold_{fold}.pth", map_location=device)
@@ -146,50 +197,74 @@ def train_fold(
 
     auc, f1, precision, recall, threshold, cm = evaluate_fold(model, test_loader, device)
 
-    print("\n" + "=" * 40)
-    print(f"FOLD {fold} RESULTS")
-    print("=" * 40)
-    print(f"AUROC     : {auc:.4f}")
-    print(f"F1        : {f1:.4f}")
-    print(f"Precision : {precision:.4f}")
-    print(f"Recall    : {recall:.4f}")
-    print(f"Threshold : {threshold:.2f}")
-    print("\nConfusion Matrix")
-    print(cm)
+    print("\n" + "=" * 40, flush=True)
+    print(f"FOLD {fold} RESULTS", flush=True)
+    print("=" * 40, flush=True)
+    print(f"AUROC     : {auc:.4f}", flush=True)
+    print(f"F1        : {f1:.4f}", flush=True)
+    print(f"Precision : {precision:.4f}", flush=True)
+    print(f"Recall    : {recall:.4f}", flush=True)
+    print(f"Threshold : {threshold:.2f}", flush=True)
+    print("\nConfusion Matrix", flush=True)
+    print(cm, flush=True)
 
     return auc, f1, precision, recall
 
 
 def run_cross_validation(config: PipelineConfig = DEFAULT_CONFIG) -> None:
-    """Runs Stratified 5-Fold Cross Validation pipeline."""
+    """Runs Stratified 5-Fold Cross Validation pipeline with 0% quantile & vocab leakage."""
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    sequences, labels = load_dataset_json(config.sequence_dataset_file)
+    print("Loading raw tables for leak-free cross validation...", flush=True)
+    admissions, labevents, reports = load_raw_tables(config)
 
-    outer_train_sequences, outer_val_sequences, outer_train_labels, outer_val_labels = train_test_split(
-        sequences, labels, test_size=0.2, stratify=labels, random_state=config.random_seed
+    # Perform outer split to reserve test holdout if needed
+    outer_train_admissions, outer_val_admissions = train_test_split(
+        admissions,
+        test_size=0.2,
+        stratify=admissions["target"],
+        random_state=config.random_seed,
     )
 
     print(
-        f"Total samples={len(sequences)}, "
-        f"outer train={len(outer_train_sequences)}, "
-        f"outer validation={len(outer_val_sequences)}"
+        f"Total admissions={len(admissions)}, "
+        f"outer train={len(outer_train_admissions)}, "
+        f"outer validation={len(outer_val_admissions)}",
+        flush=True,
     )
 
-    vocab = build_vocab(outer_train_sequences)
     skf = StratifiedKFold(n_splits=config.n_splits, shuffle=True, random_state=config.random_seed)
 
     aucs, f1s, precisions, recalls = [], [], [], []
 
     for fold, (train_idx, test_idx) in enumerate(
-        skf.split(outer_train_sequences, outer_train_labels), start=1
+        skf.split(outer_train_admissions, outer_train_admissions["target"]), start=1
     ):
-        train_seqs = [outer_train_sequences[i] for i in train_idx]
-        train_lbls = [outer_train_labels[i] for i in train_idx]
-        test_seqs = [outer_train_sequences[i] for i in test_idx]
-        test_lbls = [outer_train_labels[i] for i in test_idx]
+        fold_train_adm = outer_train_admissions.iloc[train_idx]
+        fold_test_adm = outer_train_admissions.iloc[test_idx]
+
+        fold_train_labevents = labevents[labevents["hadm_id"].isin(fold_train_adm["hadm_id"])]
+        fold_test_labevents = labevents[labevents["hadm_id"].isin(fold_test_adm["hadm_id"])]
+
+        # Fit quantiles STRICTLY on fold_train_labevents
+        fold_quantile_map = fit_quantiles(fold_train_labevents)
+
+        # Apply fold_quantile_map to both fold train and fold test lab events
+        fold_train_lab_proc = apply_quantiles_to_labevents(fold_train_labevents, fold_quantile_map)
+        fold_test_lab_proc = apply_quantiles_to_labevents(fold_test_labevents, fold_quantile_map)
+
+        # Build fold sequences
+        train_seqs, train_lbls = build_fold_sequences(
+            fold_train_adm, fold_train_lab_proc, reports, experiment_mode=config.experiment_mode
+        )
+        test_seqs, test_lbls = build_fold_sequences(
+            fold_test_adm, fold_test_lab_proc, reports, experiment_mode=config.experiment_mode
+        )
+
+        # Build vocab STRICTLY from fold_train_sequences
+        fold_vocab = build_vocab(train_seqs)
 
         auc, f1, precision, recall = train_fold(
-            train_seqs, train_lbls, test_seqs, test_lbls, fold, vocab, device, config=config
+            train_seqs, train_lbls, test_seqs, test_lbls, fold, fold_vocab, device, config=config
         )
 
         aucs.append(auc)
@@ -197,11 +272,11 @@ def run_cross_validation(config: PipelineConfig = DEFAULT_CONFIG) -> None:
         precisions.append(precision)
         recalls.append(recall)
 
-    print("\n")
-    print("=" * 50)
-    print(f"FINAL CROSS-VALIDATION RESULTS - {config.experiment_mode}")
-    print("=" * 50)
-    print(f"Mean AUROC     : {np.mean(aucs):.4f} ± {np.std(aucs):.4f}")
-    print(f"Mean F1        : {np.mean(f1s):.4f} ± {np.std(f1s):.4f}")
-    print(f"Mean Precision : {np.mean(precisions):.4f}")
-    print(f"Mean Recall    : {np.mean(recalls):.4f}")
+    print("\n", flush=True)
+    print("=" * 50, flush=True)
+    print(f"FINAL LEAK-FREE CROSS-VALIDATION RESULTS - {config.experiment_mode}", flush=True)
+    print("=" * 50, flush=True)
+    print(f"Mean AUROC     : {np.mean(aucs):.4f} ± {np.std(aucs):.4f}", flush=True)
+    print(f"Mean F1        : {np.mean(f1s):.4f} ± {np.std(f1s):.4f}", flush=True)
+    print(f"Mean Precision : {np.mean(precisions):.4f}", flush=True)
+    print(f"Mean Recall    : {np.mean(recalls):.4f}", flush=True)

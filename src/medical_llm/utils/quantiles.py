@@ -9,7 +9,7 @@ import pandas as pd
 
 
 def fit_quantiles(labevents: pd.DataFrame, num_quantiles: int = 11, min_samples: int = 20) -> Dict[Any, np.ndarray]:
-    """Fits quantile boundaries for each lab item ID in labevents DataFrame."""
+    """Fits quantile boundaries for each lab item ID strictly using provided training labevents DataFrame."""
     quantile_map = {}
 
     for itemid, group in labevents.groupby("itemid"):
@@ -35,6 +35,40 @@ def apply_quantile(value: float, boundaries: np.ndarray) -> Optional[int]:
 
     bucket = np.digitize(value, boundaries[1:-1], right=True)
     return int(bucket)
+
+
+def apply_quantiles_to_labevents(labevents_df: pd.DataFrame, quantile_map: Dict[Any, np.ndarray]) -> pd.DataFrame:
+    """Applies a fitted quantile_map to discretize labevents without re-fitting boundaries."""
+    labevents = labevents_df.copy()
+    if labevents.empty:
+        labevents["qbucket"] = []
+        labevents["event_token"] = []
+        return labevents
+
+    qbuckets = []
+    for itemid, value in zip(labevents["itemid"], labevents["valuenum"]):
+        if itemid in quantile_map:
+            q = apply_quantile(value, quantile_map[itemid])
+        else:
+            q = None
+        qbuckets.append(q)
+
+    labevents["qbucket"] = qbuckets
+
+    if "flag" in labevents.columns:
+        labevents["flag"] = labevents["flag"].fillna("NORMAL")
+    else:
+        labevents["flag"] = "NORMAL"
+
+    tokens = []
+    for q, f, item in zip(labevents["qbucket"], labevents["flag"], labevents["itemid"]):
+        if pd.notnull(q):
+            tokens.append(f"LAB_{item}_Q{int(q)}")
+        else:
+            tokens.append(f"LAB_{item}_{str(f).upper()}")
+
+    labevents["event_token"] = tokens
+    return labevents
 
 
 def save_quantiles(quantile_map: Dict[Any, np.ndarray], filename: str = "quantiles.pkl") -> None:

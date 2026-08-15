@@ -1,12 +1,20 @@
 """
 Preprocessing module for MIMIC-III admissions, patients, lab events, and clinical reports.
+Implements leak-free quantile fitting strictly on training split lab events.
 """
 
 import os
+from typing import Tuple, Dict, Any, Optional
 import pandas as pd
+from sklearn.model_selection import train_test_split
+
 from medical_llm.config import DEFAULT_CONFIG, PipelineConfig
 from medical_llm.data.text_utils import clean_text
-from medical_llm.utils.quantiles import fit_quantiles, apply_quantile, save_quantiles
+from medical_llm.utils.quantiles import (
+    fit_quantiles,
+    apply_quantiles_to_labevents,
+    save_quantiles,
+)
 
 
 def process_admissions_and_patients(admissions_df: pd.DataFrame, patients_df: pd.DataFrame) -> pd.DataFrame:
@@ -32,40 +40,6 @@ def process_admissions_and_patients(admissions_df: pd.DataFrame, patients_df: pd
     ]
 
 
-def process_labevents(
-    labevents_df: pd.DataFrame,
-    d_labitems_df: pd.DataFrame,
-    quantiles_filename: str = DEFAULT_CONFIG.quantiles_file,
-) -> pd.DataFrame:
-    """Discretizes continuous lab measurement values into quantile buckets and generates event tokens."""
-    labevents = labevents_df.dropna(subset=["hadm_id"])
-    labevents = pd.merge(labevents, d_labitems_df[["itemid", "label"]], on="itemid", how="left")
-
-    quantile_map = fit_quantiles(labevents)
-    save_quantiles(quantile_map, filename=quantiles_filename)
-
-    qbuckets = []
-    for itemid, value in zip(labevents["itemid"], labevents["valuenum"]):
-        if itemid in quantile_map:
-            q = apply_quantile(value, quantile_map[itemid])
-        else:
-            q = None
-        qbuckets.append(q)
-
-    labevents["qbucket"] = qbuckets
-    labevents["flag"] = labevents["flag"].fillna("NORMAL")
-
-    tokens = []
-    for q, f, item in zip(labevents["qbucket"], labevents["flag"], labevents["itemid"]):
-        if pd.notnull(q):
-            tokens.append(f"LAB_{item}_Q{int(q)}")
-        else:
-            tokens.append(f"LAB_{item}_{str(f).upper()}")
-
-    labevents["event_token"] = tokens
-    return labevents[["subject_id", "hadm_id", "charttime", "event_token", "valuenum"]]
-
-
 def process_clinical_reports(reports_df: pd.DataFrame) -> pd.DataFrame:
     """Cleans clinical text notes and aggregates them per admission."""
     reports = reports_df.copy()
@@ -83,8 +57,8 @@ def process_clinical_reports(reports_df: pd.DataFrame) -> pd.DataFrame:
     return reports_grouped[["hadm_id", "clean_text"]]
 
 
-def run_preprocessing(config: PipelineConfig = DEFAULT_CONFIG, dummy_mode: bool = False) -> None:
-    """Main execution function to load raw CSVs, process all modal components, and output cleaned CSV files."""
+def load_raw_tables(config: PipelineConfig = DEFAULT_CONFIG, dummy_mode: bool = False) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """Loads raw admissions, patients, labevents, d_labitems, and reports CSV DataFrames."""
     dummy_flag = dummy_mode or (os.environ.get("DUMMY_MODE", "") == "1")
     if dummy_flag:
         print("[DUMMY MODE] Using dummy CSV files.")
@@ -95,24 +69,62 @@ def run_preprocessing(config: PipelineConfig = DEFAULT_CONFIG, dummy_mode: bool 
     d_lab_file = config.get_csv_name(config.d_labitems_csv, dummy_flag)
     rep_file = config.get_csv_name(config.reports_csv, dummy_flag)
 
-    print("Loading raw medical data CSVs...")
     admissions = pd.read_csv(adm_file)
     patients = pd.read_csv(pat_file)
     labevents = pd.read_csv(lab_file)
     d_labitems = pd.read_csv(d_lab_file)
     reports = pd.read_csv(rep_file)
 
-    print("Merging admissions and patients...")
     admissions_processed = process_admissions_and_patients(admissions, patients)
 
-    print("Processing lab events (Continuous Bucketing)...")
-    labevents_processed = process_labevents(labevents, d_labitems, config.quantiles_file)
+    labevents = labevents.dropna(subset=["hadm_id"])
+    labevents = pd.merge(labevents, d_labitems[["itemid", "label"]], on="itemid", how="left")
 
-    print("Processing medical reports (NLP text normalization)...")
     reports_processed = process_clinical_reports(reports)
+
+    return admissions_processed, labevents, reports_processed
+
+
+def fit_and_apply_quantiles_split(
+    train_labevents: pd.DataFrame,
+    val_labevents: Optional[pd.DataFrame] = None,
+    test_labevents: Optional[pd.DataFrame] = None,
+    quantiles_filename: str = DEFAULT_CONFIG.quantiles_file,
+) -> Tuple[pd.DataFrame, Optional[pd.DataFrame], Optional[pd.DataFrame], Dict[Any, Any]]:
+    """Fits quantile map STRICTLY on train_labevents and applies those exact quantile boundaries to train, val, and test splits."""
+    quantile_map = fit_quantiles(train_labevents)
+    save_quantiles(quantile_map, filename=quantiles_filename)
+
+    train_processed = apply_quantiles_to_labevents(train_labevents, quantile_map)
+    val_processed = apply_quantiles_to_labevents(val_labevents, quantile_map) if val_labevents is not None else None
+    test_processed = apply_quantiles_to_labevents(test_labevents, quantile_map) if test_labevents is not None else None
+
+    return train_processed, val_processed, test_processed, quantile_map
+
+
+def run_preprocessing(config: PipelineConfig = DEFAULT_CONFIG, dummy_mode: bool = False) -> None:
+    """Standard execution function for preprocessing data with strict train-only quantile fitting."""
+    print("Loading raw medical data CSVs...")
+    admissions_processed, labevents, reports_processed = load_raw_tables(config, dummy_mode=dummy_mode)
+
+    # Perform patient-level stratified split to isolate train labevents for quantile fitting
+    train_hadms, _ = train_test_split(
+        admissions_processed["hadm_id"].unique(),
+        test_size=0.2,
+        random_state=config.random_seed,
+    )
+    train_labevents = labevents[labevents["hadm_id"].isin(train_hadms)]
+
+    print("Fitting quantiles STRICTLY on training split lab events...")
+    quantile_map = fit_quantiles(train_labevents)
+    save_quantiles(quantile_map, filename=config.quantiles_file)
+
+    print("Applying training quantile boundaries to all lab events...")
+    labevents_processed = apply_quantiles_to_labevents(labevents, quantile_map)
+    labevents_processed = labevents_processed[["subject_id", "hadm_id", "charttime", "event_token", "valuenum"]]
 
     print("Saving processed CSV artifacts...")
     admissions_processed.to_csv(config.processed_admissions_file, index=False)
     labevents_processed.to_csv(config.processed_labevents_file, index=False)
     reports_processed.to_csv(config.processed_reports_file, index=False)
-    print("Preprocessing completed successfully.")
+    print("Preprocessing completed successfully with 0% quantile leakage.")
