@@ -9,7 +9,7 @@ import json
 import shutil
 import sys
 
-from medical_llm.config import DEFAULT_CONFIG
+from src.medical_llm.config import DEFAULT_CONFIG
 from medical_llm.data.preprocessing import run_preprocessing
 from medical_llm.data.sequence_builder import run_sequence_builder
 from medical_llm.pipeline.cross_validator import run_cross_validation
