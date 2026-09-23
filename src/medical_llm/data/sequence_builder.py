@@ -77,6 +77,8 @@ def run_sequence_builder(
 
     sequences = []
     labels = []
+    subject_ids = []
+    hadm_ids = []
 
     for _, row in df.iterrows():
         age_bucket = int(row["age"] // 10) * 10 if pd.notnull(row["age"]) else 0
@@ -103,14 +105,19 @@ def run_sequence_builder(
 
         sequences.append(seq)
         labels.append(int(row["target"]) if pd.notnull(row["target"]) else 0)
+        subject_ids.append(int(row["subject_id"]))
+        hadm_ids.append(int(row["hadm_id"]))
 
     dataset = {
         "sequences": sequences,
-        "labels": labels
+        "labels": labels,
+        "subject_ids": subject_ids,
+        "hadm_ids": hadm_ids,
     }
 
     with open(config.sequence_dataset_file, "w") as f:
         json.dump(dataset, f)
 
     print(f"Generated {len(sequences)} sequences into {config.sequence_dataset_file}")
+    print(f"  Unique subjects: {len(set(subject_ids))}, Unique admissions: {len(set(hadm_ids))}")
     return dataset

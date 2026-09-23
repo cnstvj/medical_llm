@@ -7,6 +7,21 @@ quantiles.pkl
 best_fold_*.pth
 best_model.pth
 
+# Backups, Archives & Local notes
+*.zip
+clean_rebuild/
+*.pth
+*.tmp
+
+# Root Markdown notes (temporary scratch notes)
+Quantile Leakage*.md
+Temporal Lookahead*.md
+fix__now.md
+pid_4s_rem.md
+MERGED_MIMIC_III_CLEAN_REBUILD_SPECIFICATION.md
+sem.md
+new.py/
+
 # Dummy data
 *_DUMMY.csv
 

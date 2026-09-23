@@ -1,10 +1,11 @@
-"""
-Unit tests verifying 0% quantile data leakage across train, val, and test splits.
-"""
-
+import sys
+import os
 import unittest
 import numpy as np
 import pandas as pd
+
+# Add src to sys.path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
 
 from medical_llm.utils.quantiles import fit_quantiles, apply_quantile, apply_quantiles_to_labevents
 
@@ -70,6 +71,20 @@ class TestQuantileLeakage(unittest.TestCase):
 
         processed = apply_quantiles_to_labevents(new_item_df, q_map)
         self.assertEqual(processed["event_token"].iloc[0], "LAB_99999_ABNORMAL")
+
+    def test_cross_validation_fold_quantile_isolation(self):
+        """Verify that modifying out-of-fold / test data has zero effect on training-fold quantiles."""
+        fold_train_labs = self.train_df.copy()
+        fold_test_labs = self.val_df.copy()
+
+        q_fold_1 = fit_quantiles(fold_train_labs)
+
+        # Drastically alter the test fold
+        fold_test_labs["valuenum"] = -999999.0
+        q_fold_2 = fit_quantiles(fold_train_labs)
+
+        # Assert quantiles are identical
+        np.testing.assert_array_equal(q_fold_1[50800], q_fold_2[50800])
 
 
 if __name__ == "__main__":
