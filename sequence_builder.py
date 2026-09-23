@@ -4,6 +4,13 @@ sequence_builder.py
 Backward-compatible CLI wrapper for temporal sequence building.
 """
 
+import sys
+import os
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+os.chdir(BASE_DIR)
+sys.path.insert(0, os.path.join(BASE_DIR, "src"))
+
 from medical_llm.config import DEFAULT_CONFIG
 from medical_llm.data.sequence_builder import (
     time_gap_token,

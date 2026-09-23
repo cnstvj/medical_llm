@@ -9,14 +9,16 @@ import json
 import shutil
 import sys
 
-from src.medical_llm.config import DEFAULT_CONFIG
+# Ensure script runs from its own directory and src is on sys.path
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+os.chdir(BASE_DIR)
+sys.path.insert(0, os.path.join(BASE_DIR, "src"))
+
+from medical_llm.config import DEFAULT_CONFIG
 from medical_llm.data.preprocessing import run_preprocessing
 from medical_llm.data.sequence_builder import run_sequence_builder
 from medical_llm.pipeline.cross_validator import run_cross_validation
 from medical_llm.utils.logging import log_event
-
-# Ensure script runs from its own directory
-os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
 DUMMY_MODE = "--dummy" in sys.argv
 
@@ -33,11 +35,11 @@ GENERATED_FILES = [
     DEFAULT_CONFIG.quantiles_file,
 ]
 
-MODEL_FILES = [
-    f for f in os.listdir(".") if f.startswith("best_fold_") and f.endswith(".pth")
-]
-
 print("\n===== CLEANING OLD OUTPUTS =====\n")
+
+MODEL_FILES = [
+    f for f in os.listdir(".") if (f.startswith("best_fold_") or f == "best_model.pth") and f.endswith(".pth")
+]
 
 for file in GENERATED_FILES + MODEL_FILES:
     if os.path.exists(file):
@@ -83,7 +85,20 @@ with open(DEFAULT_CONFIG.sequence_dataset_file, "r") as f:
 
 print("\n===== RUNNING 5-FOLD CROSS VALIDATION =====\n")
 
-run_cross_validation()
+# Allow CLI --label or --tag, or prompt user interactively
+run_label = None
+for i, arg in enumerate(sys.argv):
+    if arg in ("--label", "--tag") and i + 1 < len(sys.argv):
+        run_label = sys.argv[i + 1]
+
+if run_label is None:
+    try:
+        user_input = input("Enter a label / note for this run (e.g. 'Added temporal cutoff fix'): ").strip()
+        run_label = user_input if user_input else "Standard rerun"
+    except (EOFError, KeyboardInterrupt):
+        run_label = "Standard rerun"
+
+results = run_cross_validation(config=DEFAULT_CONFIG, dummy_mode=DUMMY_MODE, run_label=run_label)
 
 print("\n===== PIPELINE COMPLETE =====\n")
 
@@ -94,3 +109,5 @@ saved_models = [
 print(f"Saved fold models: {len(saved_models)}")
 for model in sorted(saved_models):
     print(f"  {model}")
+
+print(f"\n[OK] Results logged to {DEFAULT_CONFIG.log_file} with label: '{run_label}'")

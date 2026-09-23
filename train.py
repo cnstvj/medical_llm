@@ -10,11 +10,13 @@ Usage:
 
 import sys
 import os
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+os.chdir(BASE_DIR)
+sys.path.insert(0, os.path.join(BASE_DIR, "src"))
+
 from medical_llm.pipeline.trainer import train, prepare_data, evaluate
 from medical_llm.utils.logging import log_event
-
-# Ensure script runs from its own directory
-os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
 
 def main():

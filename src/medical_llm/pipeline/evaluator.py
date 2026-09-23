@@ -23,6 +23,9 @@ from medical_llm.config import DEFAULT_CONFIG, PipelineConfig
 from medical_llm.utils.logging import log_event
 from medical_llm.data.dataset import MedicalDataset, build_vocab, load_dataset_json
 from medical_llm.models.transformer import MedicalTransformer
+from medical_llm.models.clinical_explainer import ClinicalExplainer
+from medical_llm.semantic.metrics import SemanticEvaluationSuite
+from medical_llm.semantic.representation import SemanticRepresentation
 
 
 def evaluate_model(model: torch.nn.Module, loader: DataLoader, device: torch.device) -> Tuple[List[float], List[float]]:
@@ -39,8 +42,31 @@ def evaluate_model(model: torch.nn.Module, loader: DataLoader, device: torch.dev
             logits = model(x, mask)
             p = torch.sigmoid(logits)
 
-            all_probs.extend(p.cpu().numpy())
-            all_labels.extend(y.numpy())
+            all_probs.extend(p.cpu().numpy().tolist())
+            all_labels.extend(y.numpy().tolist())
+
+    return all_probs, all_labels
+
+
+def evaluate_multimodal_model(model: torch.nn.Module, loader: DataLoader, device: torch.device) -> Tuple[List[float], List[float]]:
+    """Runs inference across a multi-modal data loader and returns predicted probabilities and true labels."""
+    model.eval()
+    all_probs = []
+    all_labels = []
+
+    with torch.no_grad():
+        for batch in loader:
+            lab_ids = batch["lab_ids"].to(device)
+            lab_mask = batch["lab_mask"].to(device)
+            text_ids = batch["text_ids"].to(device)
+            text_mask = batch["text_mask"].to(device)
+            y = batch["label"]
+
+            logits = model(lab_ids, lab_mask, text_ids, text_mask)
+            p = torch.sigmoid(logits)
+
+            all_probs.extend(p.cpu().numpy().tolist())
+            all_labels.extend(y.numpy().tolist())
 
     return all_probs, all_labels
 
@@ -116,7 +142,7 @@ def run_test_evaluation(dummy_mode: bool = False, config: PipelineConfig = DEFAU
     log_event(f"Found {len(fold_models)} saved model(s): "
               f"{', '.join(os.path.basename(m) for m in fold_models)}\n")
 
-    sequences, labels = load_dataset_json(config.sequence_dataset_file)
+    sequences, labels, _ = load_dataset_json(config.sequence_dataset_file)
 
     total = len(labels)
     deaths = sum(labels)
@@ -126,6 +152,21 @@ def run_test_evaluation(dummy_mode: bool = False, config: PipelineConfig = DEFAU
     all_f1s = []
     all_precisions = []
     all_recalls = []
+
+    reports_map = {}
+    if os.path.exists(config.processed_reports_file):
+        try:
+            import pandas as pd
+            r_df = pd.read_csv(config.processed_reports_file)
+            reports_map = dict(zip(r_df["hadm_id"], r_df["clean_text"]))
+        except Exception:
+            pass
+
+    import json
+    with open(config.sequence_dataset_file, "r") as f:
+        data_json = json.load(f)
+    hadm_ids = data_json.get("hadm_ids", [0] * len(sequences))
+    clinical_texts = [str(reports_map.get(hid, "")) for hid in hadm_ids]
 
     for model_path in fold_models:
         fold_name = os.path.basename(model_path).replace(".pth", "")
@@ -138,13 +179,44 @@ def run_test_evaluation(dummy_mode: bool = False, config: PipelineConfig = DEFAU
             vocab = build_vocab(sequences)
             state_dict = checkpoint
 
-        dataset = MedicalDataset(sequences, labels, vocab)
-        loader = DataLoader(dataset, batch_size=config.batch_size)
+        is_multimodal = any("text_encoder" in k for k in state_dict.keys())
+        if is_multimodal:
+            from medical_llm.models.multimodal_transformer import MultiModalMedicalTransformer
+            from medical_llm.data.dataset import MultiModalMedicalDataset
+            from medical_llm.pipeline.cross_validator import get_hf_tokenizer
 
-        model = MedicalTransformer(len(vocab)).to(device)
-        model.load_state_dict(state_dict)
+            tokenizer = get_hf_tokenizer(config.pretrained_text_model)
+            dataset = MultiModalMedicalDataset(
+                lab_sequences=sequences,
+                clinical_texts=clinical_texts,
+                labels=labels,
+                vocab=vocab,
+                tokenizer=tokenizer,
+                max_lab_len=config.max_len,
+                max_text_len=config.text_max_len,
+            )
+            loader = DataLoader(dataset, batch_size=config.batch_size)
+            model = MultiModalMedicalTransformer(
+                vocab_size=len(vocab),
+                d_model=config.d_model,
+                nhead=config.nhead,
+                num_layers=config.num_layers,
+                dim_feedforward=config.dim_feedforward,
+                dropout=config.dropout,
+                max_lab_len=config.max_len,
+                pretrained_text_model=config.pretrained_text_model,
+                freeze_text_backbone=config.freeze_text_backbone,
+                fusion_type=config.fusion_type,
+            ).to(device)
+            model.load_state_dict(state_dict)
+            probs, true_labels = evaluate_multimodal_model(model, loader, device)
+        else:
+            dataset = MedicalDataset(sequences, labels, vocab)
+            loader = DataLoader(dataset, batch_size=config.batch_size)
+            model = MedicalTransformer(len(vocab)).to(device)
+            model.load_state_dict(state_dict)
+            probs, true_labels = evaluate_model(model, loader, device)
 
-        probs, true_labels = evaluate_model(model, loader, device)
         metrics = compute_metrics(probs, true_labels)
 
         print_metrics(metrics, header=f"{fold_name.upper()} RESULTS")
@@ -162,5 +234,44 @@ def run_test_evaluation(dummy_mode: bool = False, config: PipelineConfig = DEFAU
         log_event(f"Mean F1        : {np.mean(all_f1s):.4f} +/- {np.std(all_f1s):.4f}")
         log_event(f"Mean Precision : {np.mean(all_precisions):.4f}")
         log_event(f"Mean Recall    : {np.mean(all_recalls):.4f}")
+
+    # Evaluate Semantic Communication Layer on Test Samples
+    log_event(f"\n\n{'='*50}")
+    log_event("SEMANTIC COMMUNICATION LAYER EVALUATION")
+    log_event("=" * 50)
+
+    sample_size = min(20, len(sequences))
+    test_reps: List[SemanticRepresentation] = []
+    test_exps: List[str] = []
+
+    encoder, _, _ = ClinicalExplainer.get_components()
+
+    for idx in range(sample_size):
+        seq = sequences[idx]
+        # Use average predicted probability if probs available, else label baseline
+        prob = float(np.mean([probs[idx] for probs in [probs]])) if 'probs' in locals() and idx < len(probs) else (0.85 if labels[idx] == 1 else 0.15)
+        expl_result = ClinicalExplainer.generate_patient_rationale(
+            probability=prob,
+            lab_tokens=seq,
+            threshold=0.5,
+            validate=True,
+        )
+        rep = SemanticRepresentation.from_dict(expl_result["semantic_representation"])
+        test_reps.append(rep)
+        test_exps.append(expl_result["clinical_narrative"])
+
+    sem_metrics = SemanticEvaluationSuite.evaluate_batch(test_exps, test_reps)
+    log_event(f"Samples Evaluated         : {sem_metrics['num_evaluated']}")
+    log_event(f"Semantic Preservation     : {sem_metrics['semantic_preservation_score'] * 100:.1f}%")
+    log_event(f"Unsupported Claim Rate    : {sem_metrics['unsupported_claim_rate'] * 100:.1f}%")
+    log_event(f"Directional Accuracy      : {sem_metrics['directional_accuracy'] * 100:.1f}%")
+    log_event(f"Uncertainty Coverage      : {sem_metrics['uncertainty_coverage'] * 100:.1f}%")
+    log_event(f"Validation Pass Rate      : {sem_metrics['validation_pass_rate'] * 100:.1f}%")
+    log_event(f"Clinical Faithfulness Ind : {sem_metrics['clinical_faithfulness_index']:.4f}")
+
+    if test_exps:
+        log_event(f"\n--- Sample Semantic Communication Output (Index 0) ---")
+        log_event(f"Summary    : {test_reps[0].clinical_summary}")
+        log_event(f"Explanation: {test_exps[0]}")
 
     log_event(f"\nDone.\n")

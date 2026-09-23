@@ -10,6 +10,11 @@ Usage:
 
 import sys
 import os
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+os.chdir(BASE_DIR)
+sys.path.insert(0, os.path.join(BASE_DIR, "src"))
+
 from medical_llm.pipeline.evaluator import (
     evaluate_model,
     compute_metrics,
@@ -17,9 +22,6 @@ from medical_llm.pipeline.evaluator import (
     run_test_evaluation,
 )
 from medical_llm.pipeline.trainer import prepare_data
-
-# Ensure script runs from its own directory
-os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
 
 def main():
