@@ -36,12 +36,21 @@ class PipelineConfig:
     dropout: float = 0.1
     max_len: int = 512
 
-    batch_size: int = 32
+    # Multi-Modal NLP Parameters
+    use_multimodal_nlp: bool = True
+    pretrained_text_model: str = "emilyalsentzer/Bio_ClinicalBERT"
+    text_max_len: int = 256
+    text_embedding_dim: int = 768
+    fusion_type: str = "gated"  # "concat", "gated", "cross_attention"
+    freeze_text_backbone: bool = True
+    text_learning_rate: float = 2e-5
+
+    batch_size: int = 16
     learning_rate: float = 1e-3
     weight_decay: float = 1e-4
     epochs: int = 10
     max_epochs: int = 30
-    patience: int = 3
+    patience: int = 4
     n_splits: int = 5
     random_seed: int = 42
 

@@ -7,6 +7,7 @@ Backward-compatible wrapper re-exporting PyTorch Dataset & DataLoader utilities.
 from medical_llm.data.dataset import (
     MedicalDataset,
     train_test_split_custom,
+    train_test_split_by_subject,
     build_vocab,
     get_dataloaders,
     load_dataset_json,
@@ -15,6 +16,7 @@ from medical_llm.data.dataset import (
 __all__ = [
     "MedicalDataset",
     "train_test_split_custom",
+    "train_test_split_by_subject",
     "build_vocab",
     "get_dataloaders",
     "load_dataset_json",
