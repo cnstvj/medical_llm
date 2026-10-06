@@ -1,105 +1,182 @@
 # Medical LLM
 
-A modular PyTorch Transformer and NLP pipeline for temporal sequence processing and mortality prediction using MIMIC-III structured medical records.
+A modular PyTorch Transformer and clinical NLP pipeline for in-hospital mortality prediction using MIMIC-III electronic health records. The system integrates structured longitudinal laboratory trajectories with unstructured clinical notes via `Bio_ClinicalBERT`, enforces a 4-layer data leakage shield, and provides an explainable Semantic Communication layer with an automated hallucination auditor.
 
 ---
 
-## Package Architecture
-
-The project is structured as a clean Python package under `src/medical_llm`:
+## 1. System Architecture
 
 ```
 medical_llm/
-├── pyproject.toml                     # Package configuration & dependencies
-├── README.md                          # Project documentation
-├── src/
-│   └── medical_llm/                   # Core Python package
-│       ├── __init__.py                # Package initialization
-│       ├── config.py                  # Centralized configuration & hyperparameters
-│       ├── utils/                     # Utilities package
-│       │   ├── __init__.py
-│       │   ├── logging.py             # Event logging helper
-│       │   └── quantiles.py           # Continuous lab measurement quantization
-│       ├── data/                      # Data processing package
-│       │   ├── __init__.py
-│       │   ├── text_utils.py          # Clinical note normalization
-│       │   ├── preprocessing.py       # Data cleaning, merging, and quantization
-│       │   ├── sequence_builder.py    # Temporal sequence construction
-│       │   └── dataset.py             # PyTorch Dataset, DataLoaders & vocabulary
-│       ├── models/                    # Model architecture package
-│       │   ├── __init__.py
-│       │   └── transformer.py         # PositionalEncoding & MedicalTransformer
-│       └── pipeline/                  # Execution pipeline package
-│           ├── __init__.py
-│           ├── evaluator.py           # Metrics calculation & test inference
-│           ├── trainer.py             # Training loop with class-imbalance weighting
-│           └── cross_validator.py     # Stratified 5-Fold Cross Validation
-├── preprocessing.py                   # Top-level CLI wrapper
-├── sequence_builder.py                # Top-level CLI wrapper
-├── dataset.py                         # Backward-compatibility wrapper
-├── model.py                           # Backward-compatibility wrapper
-├── quantile_utils.py                  # Backward-compatibility wrapper
-├── train.py                           # CLI training runner
-├── test.py                            # CLI evaluation runner
-├── cross_validate.py                  # CLI cross-validation runner
-├── rerun_pipeline.py                  # Complete end-to-end pipeline runner
-└── generate_dummy_data.py             # Synthetic data generator for rapid testing
+├── pyproject.toml                         # Package configuration & dependencies
+├── README.md                              # Project documentation
+├── PIPELINE_ARCHITECTURE_STEP_BY_STEP.md # In-depth technical architecture guide
+├── run.bat                                # Windows execution runner
+│
+├── Raw Data Files (MIMIC-III Cohort)
+│   ├── ADMISSIONS.csv                     # Hospital encounters & outcome flags
+│   ├── PATIENTS.csv                       # Demographics & birth dates
+│   ├── LABEVENTS.csv                      # Longitudinal laboratory observations
+│   ├── D_LABITEMS.csv                     # Lab item metadata & analyte labels
+│   └── structured_medical_records.csv     # Unstructured admission & triage notes
+│
+├── Top-Level Execution Runners
+│   ├── rerun_pipeline.py                  # End-to-end pipeline orchestrator
+│   ├── generate_dummy_data.py             # Synthetic cohort generator for rapid testing
+│   ├── demo_semantic_explainer.py         # NLP Semantic Explainer demonstration
+│   ├── preprocessing.py                   # CLI wrapper: data cleaning & temporal filtering
+│   ├── sequence_builder.py                # CLI wrapper: temporal token sequence assembly
+│   ├── train.py                           # CLI wrapper: single model training
+│   ├── cross_validate.py                  # CLI wrapper: 5-fold stratified cross-validation
+│   ├── test.py                            # CLI wrapper: checkpoint evaluation & audit
+│   ├── dataset.py                         # Backward-compatible API wrapper
+│   ├── model.py                           # Backward-compatible API wrapper
+│   └── quantile_utils.py                  # Backward-compatible API wrapper
+│
+├── src/medical_llm/                       # Canonical Python Package
+│   ├── __init__.py                        # Package initialization
+│   ├── config.py                          # Hyperparameters, dataclass config & CLI parsing
+│   │
+│   ├── data/                              # Data Processing Subpackage
+│   │   ├── __init__.py
+│   │   ├── text_utils.py                  # Clinical note identifier & date sanitization
+│   │   ├── preprocessing.py               # Patient alignment, HIPAA age capping, leak-free quantiles
+│   │   ├── sequence_builder.py            # Irregular interval bucketing & sequence generation
+│   │   └── dataset.py                     # PyTorch Datasets & patient-level group splitting
+│   │
+│   ├── models/                            # Model Architectures
+│   │   ├── __init__.py
+│   │   ├── transformer.py                 # Sinusoidal PositionalEncoding & Pre-LN MedicalTransformer
+│   │   ├── multimodal_transformer.py      # ClinicalTextEncoder (Bio_ClinicalBERT) + Gated Fusion
+│   │   └── clinical_explainer.py          # ClinicalExplainer rationale synthesis coordinator
+│   │
+│   ├── semantic/                          # Semantic Communication Subpackage
+│   │   ├── __init__.py
+│   │   ├── representation.py              # SemanticRepresentation structured dataclass model
+│   │   ├── dictionary.py                  # Clinical knowledge dictionary & analyte profiles
+│   │   ├── encoder.py                     # SemanticTransformerEncoder & salience extraction
+│   │   ├── decoder.py                     # SemanticTransformerDecoder narrative generator
+│   │   ├── validator.py                   # ExplanationValidator hallucination & safety auditor
+│   │   └── metrics.py                     # Semantic preservation & clinical faithfulness suite
+│   │
+│   ├── pipeline/                          # Pipeline Execution Subpackage
+│   │   ├── __init__.py
+│   │   ├── trainer.py                     # Training loop with class-imbalance weighting
+│   │   ├── cross_validator.py             # Leak-free 5-Fold StratifiedGroupKFold engine
+│   │   └── evaluator.py                   # Multi-metric threshold-tuning & test evaluation
+│   │
+│   └── utils/                             # Utilities
+│       ├── __init__.py
+│       ├── logging.py                     # Centralized event logging helper
+│       └── quantiles.py                   # Continuous measurement quantization & serialization
+│
+└── tests/                                 # Verification Test Suite (27 Unit Tests)
+    ├── test_patient_leakage.py            # Verifies 0% patient overlap across splits
+    ├── test_quantile_leakage.py           # Verifies quantiles fitted strictly on train sets
+    ├── test_temporal_leakage.py           # Verifies zero post-discharge lookahead events
+    ├── test_identifier_leakage.py         # Verifies stripping of Subject/Admission IDs & dates
+    ├── test_semantic_encoder.py           # Verifies representation construction & direction
+    ├── test_semantic_decoder.py           # Verifies faithful narrative generation
+    ├── test_semantic_validator.py         # Verifies hallucination & unauthorized directive detection
+    └── test_semantic_preservation.py      # Verifies end-to-end semantic fidelity
 ```
 
 ---
 
-## Installation
+## 2. Multi-Layer Data Leakage Shield
 
-Install the package in editable mode:
+Medical predictive AI is exceptionally vulnerable to data leakage. This system enforces four strict defense layers:
+
+1. **Patient Leakage**: Enforced by `StratifiedGroupKFold` and `train_test_split_by_subject`. All hospital admissions for a given `subject_id` are grouped strictly into the same split (0% patient overlap).
+2. **Quantile Leakage**: Lab decile cutoffs ($Q0-Q9$) are fitted **strictly** on training split lab events (`fit_quantiles()`), serialized to disk, and statically applied to validation and test folds (`apply_quantiles_to_labevents()`).
+3. **Temporal Lookahead Leakage**: Measurements recorded after the prediction cutoff ($t > \min(\text{dischtime}, \text{deathtime})$) or earlier than 24 hours prior to admission are filtered out during ingestion.
+4. **Identifier Leakage**: `clean_text()` strips patient IDs, admission numbers, and calendar timestamps from clinical notes while preserving clinical findings and medical negation.
+
+---
+
+## 3. Installation
+
+Install dependencies and the `medical_llm` package in editable mode:
 
 ```bash
 pip install -e .
 ```
 
+Requirements:
+- Python $\ge$ 3.8
+- PyTorch
+- Transformers
+- Pandas, NumPy, Scikit-Learn
+
 ---
 
-## Usage Guide
+## 4. Usage Guide
 
-### 1. Rapid Dummy Test Run
-To test the pipeline without full production MIMIC datasets:
-
+### Rapid Synthetic Test Run (No Production MIMIC Required)
 ```bash
 python generate_dummy_data.py
 python rerun_pipeline.py --dummy
 ```
-
-### 2. Full Training Pipeline
-To run pre-processing, sequence building, and cross-validation on production MIMIC-III CSV files:
-
+To run rapidly on CPU without loading heavy BERT weights:
 ```bash
-python rerun_pipeline.py
+python rerun_pipeline.py --dummy --unimodal
 ```
 
-### 3. Individual CLI Steps
+### Full Production Pipeline
+To run preprocessing, sequence building, and 5-fold cross-validation on production MIMIC-III CSV files:
+```bash
+python rerun_pipeline.py --label "Production MIMIC-III Full Run"
+```
+
+### Run Semantic Communication & Explanation Demo
+Demonstrates the conversion of technical model outputs and decile tokens into a structured semantic representation and clinician-readable narrative with automated safety validation:
+```bash
+python demo_semantic_explainer.py
+```
+
+### Individual CLI Steps
+Every runner supports common flags (`--dummy`, `--unimodal`, `--multimodal`, `--mode <MODE>`, `--epochs <N>`):
+
 - **Data Preprocessing**: `python preprocessing.py`
 - **Sequence Building**: `python sequence_builder.py`
 - **Single Model Training**: `python train.py` (or `python train.py --dummy`)
-- **5-Fold Cross Validation**: `python cross_validate.py`
+- **5-Fold Cross Validation**: `python cross_validate.py` (or `python cross_validate.py --dummy`)
 - **Model Evaluation**: `python test.py` (or `python test.py --dummy`)
 
 ---
 
-## Python API Usage
+## 5. Running the Test Suite
 
-You can also import and use `medical_llm` components in custom scripts:
+Execute all 27 unit and integration tests across data leakage shields, neural models, and the semantic communication system:
+
+```bash
+pytest -v
+```
+
+---
+
+## 6. Python API Usage
 
 ```python
 from medical_llm.config import PipelineConfig
-from medical_llm.models import MedicalTransformer
+from medical_llm.models import MedicalTransformer, ClinicalExplainer
 from medical_llm.data import get_dataloaders
-from medical_llm.pipeline import train_fold
+from medical_llm.pipeline import run_cross_validation
 
-# Custom configuration
-config = PipelineConfig(d_model=256, nhead=8, epochs=15)
+# 1. Custom Configuration
+config = PipelineConfig(d_model=128, nhead=4, epochs=10)
 
-# Load data loaders
-train_loader, val_loader, test_loader, vocab = get_dataloaders("sequence_dataset.json", batch_size=config.batch_size)
+# 2. Run Leak-Free 5-Fold Cross Validation
+results = run_cross_validation(config=config, dummy_mode=True)
+print(f"Mean AUROC: {results['mean_auroc']:.4f}")
 
-# Instantiate Transformer model
-model = MedicalTransformer(vocab_size=len(vocab), d_model=config.d_model)
+# 3. Generate Clinical Explanation for a Patient Trajectory
+rationale = ClinicalExplainer.generate_patient_rationale(
+    probability=0.82,
+    lab_tokens=["LAB_50813_Q9", "TIME_LT1H", "LAB_50912_Q9"],
+    clinical_text="Patient arrived via ED with hypotension.",
+    validate=True,
+)
+print("Narrative:", rationale["clinical_narrative"])
+print("Audit Status:", "PASSED" if rationale["validation"]["is_valid"] else "FLAGGED")
 ```

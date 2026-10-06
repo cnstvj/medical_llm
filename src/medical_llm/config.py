@@ -4,7 +4,7 @@ Centralized Configuration for Medical LLM pipeline.
 
 import os
 from dataclasses import dataclass, field
-from typing import List
+from typing import List, Tuple, Optional
 
 
 @dataclass
@@ -63,3 +63,72 @@ class PipelineConfig:
 
 
 DEFAULT_CONFIG = PipelineConfig()
+
+
+def parse_pipeline_args(
+    args: Optional[List[str]] = None,
+    default_config: Optional[PipelineConfig] = None,
+) -> Tuple[PipelineConfig, bool, Optional[str]]:
+    """
+    Parses standard command-line flags and returns (config, dummy_mode, run_label).
+    Supports --dummy, --unimodal, --multimodal, --mode, --epochs, --batch-size, --lr, --patience, --splits, --label.
+    """
+    import argparse
+    import sys
+
+    if args is None:
+        args = sys.argv[1:]
+
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--dummy", action="store_true", default=False, help="Run in dummy/synthetic data mode")
+    parser.add_argument("--unimodal", action="store_true", default=False, help="Disable multi-modal ClinicalBERT notes stream")
+    parser.add_argument("--multimodal", action="store_true", default=False, help="Enable multi-modal ClinicalBERT notes stream")
+    parser.add_argument("--mode", type=str, default=None, choices=["FULL", "DEMOGRAPHICS", "LABS", "TEMPORAL", "NOTES"])
+    parser.add_argument("--epochs", type=int, default=None, help="Number of training epochs")
+    parser.add_argument("--batch-size", type=int, default=None, help="Batch size")
+    parser.add_argument("--lr", type=float, default=None, help="Learning rate")
+    parser.add_argument("--patience", type=int, default=None, help="Early stopping patience")
+    parser.add_argument("--splits", type=int, default=None, help="Number of CV splits")
+    parser.add_argument("--label", "--tag", dest="label", type=str, default=None, help="Descriptive label for run logs")
+    parser.add_argument("--rebuild", action="store_true", default=False, help="Force rebuilding preprocessed artifacts")
+
+    parsed, _ = parser.parse_known_args(args)
+
+    base = default_config or PipelineConfig()
+    cfg = PipelineConfig(
+        experiment_mode=parsed.mode or base.experiment_mode,
+        log_file=base.log_file,
+        quantiles_file=base.quantiles_file,
+        sequence_dataset_file=base.sequence_dataset_file,
+        processed_admissions_file=base.processed_admissions_file,
+        processed_labevents_file=base.processed_labevents_file,
+        processed_reports_file=base.processed_reports_file,
+        admissions_csv=base.admissions_csv,
+        patients_csv=base.patients_csv,
+        labevents_csv=base.labevents_csv,
+        d_labitems_csv=base.d_labitems_csv,
+        reports_csv=base.reports_csv,
+        d_model=base.d_model,
+        nhead=base.nhead,
+        num_layers=base.num_layers,
+        dim_feedforward=base.dim_feedforward,
+        dropout=base.dropout,
+        max_len=base.max_len,
+        use_multimodal_nlp=(not parsed.unimodal) if parsed.unimodal else (True if parsed.multimodal else base.use_multimodal_nlp),
+        pretrained_text_model=base.pretrained_text_model,
+        text_max_len=base.text_max_len,
+        text_embedding_dim=base.text_embedding_dim,
+        fusion_type=base.fusion_type,
+        freeze_text_backbone=base.freeze_text_backbone,
+        text_learning_rate=base.text_learning_rate,
+        batch_size=parsed.batch_size or base.batch_size,
+        learning_rate=parsed.lr or base.learning_rate,
+        weight_decay=base.weight_decay,
+        epochs=parsed.epochs or base.epochs,
+        max_epochs=parsed.epochs or base.max_epochs,
+        patience=parsed.patience or base.patience,
+        n_splits=parsed.splits or base.n_splits,
+        random_seed=base.random_seed,
+    )
+
+    return cfg, parsed.dummy, parsed.label

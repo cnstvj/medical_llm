@@ -152,6 +152,7 @@ def run_test_evaluation(dummy_mode: bool = False, config: PipelineConfig = DEFAU
     all_f1s = []
     all_precisions = []
     all_recalls = []
+    all_model_predictions: List[List[float]] = []
 
     reports_map = {}
     if os.path.exists(config.processed_reports_file):
@@ -221,6 +222,7 @@ def run_test_evaluation(dummy_mode: bool = False, config: PipelineConfig = DEFAU
 
         print_metrics(metrics, header=f"{fold_name.upper()} RESULTS")
 
+        all_model_predictions.append(probs)
         all_aucs.append(metrics["auroc"])
         all_f1s.append(metrics["f1"])
         all_precisions.append(metrics["precision"])
@@ -248,8 +250,9 @@ def run_test_evaluation(dummy_mode: bool = False, config: PipelineConfig = DEFAU
 
     for idx in range(sample_size):
         seq = sequences[idx]
-        # Use average predicted probability if probs available, else label baseline
-        prob = float(np.mean([probs[idx] for probs in [probs]])) if 'probs' in locals() and idx < len(probs) else (0.85 if labels[idx] == 1 else 0.15)
+        # Use average predicted probability across all evaluated fold models, or label baseline fallback
+        patient_fold_probs = [preds[idx] for preds in all_model_predictions if idx < len(preds)]
+        prob = float(np.mean(patient_fold_probs)) if patient_fold_probs else (0.85 if labels[idx] == 1 else 0.15)
         expl_result = ClinicalExplainer.generate_patient_rationale(
             probability=prob,
             lab_tokens=seq,

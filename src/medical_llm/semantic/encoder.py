@@ -71,7 +71,9 @@ class SemanticTransformerEncoder(nn.Module):
             batch_first=True,
             norm_first=True,
         )
-        self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
+        self.transformer_encoder = nn.TransformerEncoder(
+            encoder_layer, num_layers=num_layers, enable_nested_tensor=False
+        )
 
         # Semantic Salience Head: scores which tokens are primary physiological drivers
         self.salience_head = nn.Sequential(

@@ -12,7 +12,8 @@ dependencies = [
     "torch",
     "pandas",
     "numpy",
-    "scikit-learn"
+    "scikit-learn",
+    "transformers"
 ]
 
 [tool.setuptools.packages.find]

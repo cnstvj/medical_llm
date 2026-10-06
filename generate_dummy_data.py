@@ -230,10 +230,12 @@ def make_reports(admissions: pd.DataFrame) -> pd.DataFrame:
 
 
 # ---------------------------------------------------------------------------
-# Main
+# Generator API & CLI
 # ---------------------------------------------------------------------------
-def main():
-    print("Generating dummy data...\n")
+def generate_dummy_datasets(out_dir: str = OUT_DIR, verbose: bool = True) -> Dict[str, pd.DataFrame]:
+    """Generates synthetic MIMIC-III compatible dummy tables and writes CSV files to out_dir."""
+    if verbose:
+        print("Generating dummy data...\n")
 
     patients   = make_patients(N_PATIENTS)
     admissions = make_admissions(patients, N_ADMISSIONS)
@@ -250,17 +252,26 @@ def main():
     }
 
     for fname, df in out.items():
-        path = os.path.join(OUT_DIR, fname)
+        path = os.path.join(out_dir, fname)
         df.to_csv(path, index=False)
-        print(f"  Written {len(df):>5} rows  ->  {fname}")
+        if verbose:
+            print(f"  Written {len(df):>5} rows  ->  {fname}")
 
     deaths = admissions["hospital_expire_flag"].sum()
-    print(f"\nDone.")
-    print(f"  {N_ADMISSIONS} admissions")
-    print(f"  {deaths} deaths ({100*deaths/N_ADMISSIONS:.1f}%)")
-    print(f"  {len(labevents)} lab events")
-    print(f"  {len(reports)} medical notes")
+    if verbose:
+        print(f"\nDone.")
+        print(f"  {N_ADMISSIONS} admissions")
+        print(f"  {deaths} deaths ({100*deaths/N_ADMISSIONS:.1f}%)")
+        print(f"  {len(labevents)} lab events")
+        print(f"  {len(reports)} medical notes")
+
+    return out
+
+
+def main():
+    generate_dummy_datasets(out_dir=OUT_DIR, verbose=True)
 
 
 if __name__ == "__main__":
     main()
+

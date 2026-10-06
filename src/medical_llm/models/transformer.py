@@ -54,7 +54,9 @@ class MedicalTransformer(nn.Module):
             norm_first=True,  # Pre-LayerNorm for training stability
         )
 
-        self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
+        self.transformer_encoder = nn.TransformerEncoder(
+            encoder_layer, num_layers=num_layers, enable_nested_tensor=False
+        )
 
         self.head = nn.Sequential(
             nn.LayerNorm(d_model),

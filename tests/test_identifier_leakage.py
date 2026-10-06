@@ -65,17 +65,32 @@ class TestIdentifierLeakage(unittest.TestCase):
         self.assertIn("fever", cleaned)
 
     def test_sequence_dataset_contains_no_subject_or_hadm_ids_in_tokens(self):
-        """Verify that sequence_dataset.json does not inject subject_id or hadm_id into token sequences."""
-        if not os.path.exists(DEFAULT_CONFIG.sequence_dataset_file):
-            self.skipTest("sequence_dataset.json not present")
+        """Verify that sequences do not inject subject_id or hadm_id into token sequences."""
+        if os.path.exists(DEFAULT_CONFIG.sequence_dataset_file):
+            with open(DEFAULT_CONFIG.sequence_dataset_file, "r") as f:
+                data = json.load(f)
+            subject_ids = data.get("subject_ids", [])
+            hadm_ids = data.get("hadm_ids", [])
+            sequences = data.get("sequences", [])
+        else:
+            # Synthetic in-memory verification if JSON artifact is not yet created on disk
+            synthetic_labs = pd.DataFrame({
+                "hadm_id": [10001, 10001, 10002],
+                "charttime": pd.to_datetime(["2150-01-01 10:00:00", "2150-01-01 14:00:00", "2150-01-02 08:00:00"]),
+                "event_token": ["LAB_50800_Q4", "LAB_50813_Q9", "LAB_50912_Q2"],
+            })
+            grouped = build_temporal_sequences(synthetic_labs, experiment_mode="FULL")
+            subject_ids = [90001, 90002]
+            hadm_ids = [10001, 10002]
+            sequences = [
+                ["AGE_60", "GENDER_M", "ADM_EMERGENCY", "[SEP]"] + grouped.iloc[0]["event_token"],
+                ["AGE_40", "GENDER_F", "ADM_ELECTIVE", "[SEP]"] + grouped.iloc[1]["event_token"],
+            ]
 
-        with open(DEFAULT_CONFIG.sequence_dataset_file, "r") as f:
-            data = json.load(f)
+        subject_id_strs = {str(sid) for sid in subject_ids}
+        hadm_id_strs = {str(hid) for hid in hadm_ids}
 
-        subject_id_strs = {str(sid) for sid in data.get("subject_ids", [])}
-        hadm_id_strs = {str(hid) for hid in data.get("hadm_ids", [])}
-
-        for seq_idx, seq in enumerate(data["sequences"]):
+        for seq_idx, seq in enumerate(sequences):
             tokens_set = set(seq)
             overlap_subj = tokens_set & subject_id_strs
             overlap_hadm = tokens_set & hadm_id_strs
