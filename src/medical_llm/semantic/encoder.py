@@ -261,16 +261,19 @@ class SemanticTransformerEncoder(nn.Module):
         text_lower = clinical_text.lower() if clinical_text else ""
         text_triggers = []
         clinical_keywords = [
+            "septic shock", "respiratory failure", "altered mental status",
+            "renal failure", "elevated lactate", "acute liver failure",
+            "pulmonary embolism", "myocardial infarction",
             "hypotension", "sepsis", "septic", "shock", "intubated", "arrest",
-            "respiratory failure", "acidosis", "tachycardia", "altered mental status",
-            "renal failure", "bleeding", "hypoxia", "hyperkalemia", "hypokalemia",
-            "elevated lactate", "anemia", "coagulopathy", "fever"
+            "acidosis", "tachycardia", "bleeding", "hypoxia", "hyperkalemia",
+            "hypokalemia", "anemia", "coagulopathy", "fever"
         ]
         for kw in clinical_keywords:
             if kw in text_lower:
                 canonical = "sepsis" if kw == "septic" else kw
                 if canonical not in text_triggers:
                     text_triggers.append(canonical)
+
 
         text_evidence = TextEvidence(
             trigger_keywords=text_triggers[:6],

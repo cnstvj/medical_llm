@@ -10,6 +10,7 @@ from medical_llm.utils.quantiles import (
     save_quantiles,
     load_quantiles,
 )
+from medical_llm.utils.audit import LeakageAuditor
 
 __all__ = [
     "log_event",
@@ -18,4 +19,6 @@ __all__ = [
     "apply_quantiles_to_labevents",
     "save_quantiles",
     "load_quantiles",
+    "LeakageAuditor",
 ]
+

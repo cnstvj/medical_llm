@@ -145,18 +145,14 @@ def train(dummy_mode: bool = False, config: PipelineConfig = DEFAULT_CONFIG, for
         hadm_ids = data.get("hadm_ids", [0] * len(labels))
         clinical_texts = [str(reports_map.get(hid, "")) for hid in hadm_ids]
 
-        # Patient-level split
-        seq_train, seq_temp, y_train, y_temp, sid_train, sid_temp = train_test_split_by_subject(
-            sequences, labels, subject_ids, test_size=0.2, random_state=config.random_seed
+        # Patient-level split with synchronized clinical text alignment
+        seq_train, seq_temp, y_train, y_temp, sid_train, sid_temp, train_texts, temp_texts = train_test_split_by_subject(
+            sequences, labels, subject_ids, test_size=0.2, random_state=config.random_seed, texts=clinical_texts
         )
-        seq_val, seq_test, y_val, y_test, _, _ = train_test_split_by_subject(
-            seq_temp, y_temp, sid_temp, test_size=0.5, random_state=config.random_seed
+        seq_val, seq_test, y_val, y_test, _, _, val_texts, test_texts = train_test_split_by_subject(
+            seq_temp, y_temp, sid_temp, test_size=0.5, random_state=config.random_seed, texts=temp_texts
         )
 
-        train_texts = [clinical_texts[i] for i, sid in enumerate(subject_ids) if sid in set(sid_train)]
-        val_sids = set(sid_temp) - set([s for s in sid_temp if s in set(subject_ids)])
-        val_texts = [clinical_texts[i] for i, s in enumerate(subject_ids) if s in set(sid_temp)][:len(seq_val)]
-        test_texts = [clinical_texts[i] for i, s in enumerate(subject_ids) if s in set(sid_temp)][len(seq_val):]
 
         from medical_llm.pipeline.cross_validator import get_hf_tokenizer
         tokenizer = get_hf_tokenizer(config.pretrained_text_model)

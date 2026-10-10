@@ -67,14 +67,16 @@ medical_llm/
 │   │
 │   └── utils/                             # Utilities
 │       ├── __init__.py
+│       ├── audit.py                       # Automated 15-point data leakage and invariant auditor
 │       ├── logging.py                     # Centralized event logging helper
 │       └── quantiles.py                   # Continuous measurement quantization & serialization
 │
-└── tests/                                 # Verification Test Suite (27 Unit Tests)
+└── tests/                                 # Verification Test Suite (32 Unit Tests)
     ├── test_patient_leakage.py            # Verifies 0% patient overlap across splits
     ├── test_quantile_leakage.py           # Verifies quantiles fitted strictly on train sets
     ├── test_temporal_leakage.py           # Verifies zero post-discharge lookahead events
     ├── test_identifier_leakage.py         # Verifies stripping of Subject/Admission IDs & dates
+    ├── test_leakage_audit.py              # Automated 15-point leakage auditor verification
     ├── test_semantic_encoder.py           # Verifies representation construction & direction
     ├── test_semantic_decoder.py           # Verifies faithful narrative generation
     ├── test_semantic_validator.py         # Verifies hallucination & unauthorized directive detection

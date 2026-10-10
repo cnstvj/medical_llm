@@ -253,12 +253,15 @@ def run_test_evaluation(dummy_mode: bool = False, config: PipelineConfig = DEFAU
         # Use average predicted probability across all evaluated fold models, or label baseline fallback
         patient_fold_probs = [preds[idx] for preds in all_model_predictions if idx < len(preds)]
         prob = float(np.mean(patient_fold_probs)) if patient_fold_probs else (0.85 if labels[idx] == 1 else 0.15)
+        patient_text = clinical_texts[idx] if idx < len(clinical_texts) else ""
         expl_result = ClinicalExplainer.generate_patient_rationale(
             probability=prob,
             lab_tokens=seq,
+            clinical_text=patient_text,
             threshold=0.5,
             validate=True,
         )
+
         rep = SemanticRepresentation.from_dict(expl_result["semantic_representation"])
         test_reps.append(rep)
         test_exps.append(expl_result["clinical_narrative"])

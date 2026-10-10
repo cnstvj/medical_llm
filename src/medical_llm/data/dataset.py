@@ -121,12 +121,18 @@ def train_test_split_by_subject(
     subject_ids: List[int],
     test_size: float = 0.2,
     random_state: int = 42,
-) -> Tuple[List[List[str]], List[List[str]], List[int], List[int], List[int], List[int]]:
+    texts: Optional[List[str]] = None,
+) -> Union[
+    Tuple[List[List[str]], List[List[str]], List[int], List[int], List[int], List[int]],
+    Tuple[List[List[str]], List[List[str]], List[int], List[int], List[int], List[int], List[str], List[str]],
+]:
     """Performs patient-level stratified train-test split.
 
     ALL admissions belonging to the same subject_id stay in the same split.
     Stratification is by whether a patient has any positive (mortality) admission.
-    Returns: (seq_train, seq_test, y_train, y_test, sid_train, sid_test)
+    Returns:
+        If texts is None: (seq_train, seq_test, y_train, y_test, sid_train, sid_test)
+        If texts is provided: (seq_train, seq_test, y_train, y_test, sid_train, sid_test, text_train, text_test)
     """
     random.seed(random_state)
 
@@ -189,7 +195,13 @@ def train_test_split_by_subject(
           f"test={len(seq_test)} adm ({len(test_subject_set)} patients), "
           f"overlap={len(overlap)} patients")
 
+    if texts is not None:
+        text_train = [texts[i] for i in train_indices]
+        text_test = [texts[i] for i in test_indices]
+        return seq_train, seq_test, y_train, y_test, sid_train, sid_test, text_train, text_test
+
     return seq_train, seq_test, y_train, y_test, sid_train, sid_test
+
 
 
 # Keep old name as alias for backward compatibility in imports
