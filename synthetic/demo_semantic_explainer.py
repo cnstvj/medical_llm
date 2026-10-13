@@ -14,7 +14,7 @@ import sys
 import os
 import json
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(BASE_DIR, "src"))
 
 from medical_llm.models.clinical_explainer import ClinicalExplainer

@@ -21,12 +21,12 @@ class PipelineConfig:
     processed_labevents_file: str = "processed_labevents.csv"
     processed_reports_file: str = "processed_reports.csv"
 
-    # Data CSV names (with optional _DUMMY suffix when in dummy mode)
-    admissions_csv: str = "ADMISSIONS.csv"
-    patients_csv: str = "PATIENTS.csv"
-    labevents_csv: str = "LABEVENTS.csv"
-    d_labitems_csv: str = "D_LABITEMS.csv"
-    reports_csv: str = "structured_medical_records.csv"
+    # Data CSV names (with optional _dummy suffix and dummy folder when in dummy mode)
+    admissions_csv: str = "data/real/admissions.csv"
+    patients_csv: str = "data/real/patients.csv"
+    labevents_csv: str = "data/real/labevents.csv"
+    d_labitems_csv: str = "data/real/d_labitems.csv"
+    reports_csv: str = "data/real/structured_medical_records.csv"
 
     # Training & Model Parameters
     d_model: int = 128
@@ -58,8 +58,14 @@ class PipelineConfig:
         """Returns CSV filename according to dummy mode flag."""
         if not dummy_mode:
             return base_name
-        name, ext = os.path.splitext(base_name)
-        return f"{name}_DUMMY{ext}"
+        # Map data/real/<file>.csv -> data/dummy/<file>_dummy.csv
+        dirname, fname = os.path.split(base_name)
+        root_dir = os.path.dirname(dirname) if os.path.basename(dirname) in ("real", "dummy") else dirname
+        dummy_dir = os.path.join(root_dir, "dummy") if root_dir else "data/dummy"
+        name, ext = os.path.splitext(fname)
+        if not name.endswith("_dummy"):
+            name = f"{name}_dummy"
+        return os.path.join(dummy_dir, f"{name}{ext}").replace("\\", "/")
 
 
 DEFAULT_CONFIG = PipelineConfig()

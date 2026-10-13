@@ -33,7 +33,7 @@ def prepare_data(dummy_mode: bool = False, config: PipelineConfig = DEFAULT_CONF
     """Ensures required data artifacts are generated via direct Python APIs without brittle subprocesses."""
     from medical_llm.data.preprocessing import run_preprocessing
     from medical_llm.data.sequence_builder import run_sequence_builder
-    from generate_dummy_data import generate_dummy_datasets
+    from synthetic.generate_dummy_data import generate_dummy_datasets
 
     if dummy_mode:
         adm_dummy = config.get_csv_name(config.admissions_csv, dummy_mode=True)
