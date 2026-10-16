@@ -11,6 +11,17 @@ from medical_llm.utils.quantiles import (
     load_quantiles,
 )
 from medical_llm.utils.audit import LeakageAuditor
+from medical_llm.utils.bleu import (
+    BLEUResult,
+    compute_ngrams,
+    modified_precision,
+    calculate_brevity_penalty,
+    closest_reference_length,
+    sentence_bleu,
+    sentence_bleu_detailed,
+    corpus_bleu,
+    corpus_bleu_detailed,
+)
 
 __all__ = [
     "log_event",
@@ -20,5 +31,14 @@ __all__ = [
     "save_quantiles",
     "load_quantiles",
     "LeakageAuditor",
+    "BLEUResult",
+    "compute_ngrams",
+    "modified_precision",
+    "calculate_brevity_penalty",
+    "closest_reference_length",
+    "sentence_bleu",
+    "sentence_bleu_detailed",
+    "corpus_bleu",
+    "corpus_bleu_detailed",
 ]
 
