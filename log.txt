@@ -1,0 +1,94 @@
+
+============================================================
+[2026-10-13 22:45:31] EVENT: 5-FOLD MULTI-MODAL CV RUN
+RUN LABEL: cleanup-validation
+============================================================
+Experiment Mode: FULL | Multi-Modal: False
+Fold 1: AUROC=0.5556 | F1=0.5455 | Precision=0.3750 | Recall=1.0000
+Fold 2: AUROC=0.4667 | F1=0.5455 | Precision=0.3750 | Recall=1.0000
+Fold 3: AUROC=0.0833 | F1=0.6000 | Precision=0.4286 | Recall=1.0000
+Fold 4: AUROC=0.8333 | F1=0.7273 | Precision=0.5714 | Recall=1.0000
+Fold 5: AUROC=0.8333 | F1=0.6000 | Precision=0.4286 | Recall=1.0000
+----------------------------------------
+Mean AUROC     : 0.5544 +/- 0.2776
+Mean F1        : 0.6036 +/- 0.0665
+Mean Precision : 0.4357
+Mean Recall    : 1.0000
+============================================================
+
+
+============================================================
+[2026-10-13 23:12:19] EVENT: 5-FOLD MULTI-MODAL CV RUN
+RUN LABEL: clinicalbert-validation
+============================================================
+Experiment Mode: FULL | Multi-Modal: True
+Fold 1: AUROC=0.7222 | AUPRC=0.7917 | F1=0.5714 | Precision=0.5000 | Recall=0.6667
+Fold 2: AUROC=0.4667 | AUPRC=0.4583 | F1=0.5455 | Precision=0.3750 | Recall=1.0000
+Fold 3: AUROC=0.0833 | AUPRC=0.3373 | F1=0.6000 | Precision=0.4286 | Recall=1.0000
+Fold 4: AUROC=1.0000 | AUPRC=1.0000 | F1=0.7273 | Precision=0.5714 | Recall=1.0000
+Fold 5: AUROC=0.8333 | AUPRC=0.8056 | F1=0.6000 | Precision=0.4286 | Recall=1.0000
+----------------------------------------
+Mean AUROC     : 0.6211 +/- 0.3200
+Mean AUPRC     : 0.6786 +/- 0.2438
+Mean Brier     : 0.2498 +/- 0.0046
+Mean F1        : 0.6088 +/- 0.0626
+Mean Precision : 0.4607
+Mean Recall    : 0.9333
+============================================================
+
+
+============================================================
+[2026-10-13 23:34:22] EVENT: 5-FOLD MULTI-MODAL CV RUN
+RUN LABEL: cleanup-validation
+============================================================
+Experiment Mode: FULL | Multi-Modal: False
+Fold 1: AUROC=0.7222 | F1=0.5000 | Precision=0.3333 | Recall=1.0000
+Fold 2: AUROC=0.3333 | F1=0.5455 | Precision=0.3750 | Recall=1.0000
+Fold 3: AUROC=0.8333 | F1=0.8000 | Precision=1.0000 | Recall=0.6667
+Fold 4: AUROC=0.3333 | F1=0.7273 | Precision=0.5714 | Recall=1.0000
+Fold 5: AUROC=1.0000 | F1=0.8000 | Precision=1.0000 | Recall=0.6667
+----------------------------------------
+Mean AUROC     : 0.6444 +/- 0.2690
+Mean F1        : 0.6745 +/- 0.1276
+Mean Precision : 0.6560
+Mean Recall    : 0.8667
+============================================================
+
+
+============================================================
+[2026-10-13 23:37:24] EVENT: 5-FOLD MULTI-MODAL CV RUN
+RUN LABEL: real-data-validation
+============================================================
+Experiment Mode: FULL | Multi-Modal: False
+Fold 1: AUROC=0.5000 | F1=0.4286 | Precision=0.2727 | Recall=1.0000
+Fold 2: AUROC=0.7708 | F1=0.4286 | Precision=0.2727 | Recall=1.0000
+Fold 3: AUROC=0.6000 | F1=0.4444 | Precision=0.2857 | Recall=1.0000
+Fold 4: AUROC=0.7333 | F1=0.5000 | Precision=0.5000 | Recall=0.5000
+Fold 5: AUROC=0.7667 | F1=0.4444 | Precision=0.2857 | Recall=1.0000
+----------------------------------------
+Mean AUROC     : 0.6742 +/- 0.1070
+Mean F1        : 0.4492 +/- 0.0264
+Mean Precision : 0.3234
+Mean Recall    : 0.9000
+============================================================
+
+
+============================================================
+[2026-10-13 23:41:37] EVENT: 5-FOLD MULTI-MODAL CV RUN
+RUN LABEL: real-clinicalbert-validation
+============================================================
+Experiment Mode: FULL | Multi-Modal: True
+Fold 1: AUROC=0.6354 | AUPRC=0.4786 | F1=0.4286 | Precision=0.2727 | Recall=1.0000
+Fold 2: AUROC=0.7604 | AUPRC=0.5966 | F1=0.5000 | Precision=0.5000 | Recall=0.5000
+Fold 3: AUROC=0.5778 | AUPRC=0.5549 | F1=0.4444 | Precision=0.2857 | Recall=1.0000
+Fold 4: AUROC=0.7889 | AUPRC=0.6390 | F1=0.5455 | Precision=0.6000 | Recall=0.5000
+Fold 5: AUROC=0.7556 | AUPRC=0.5236 | F1=0.4444 | Precision=0.2857 | Recall=1.0000
+----------------------------------------
+Mean AUROC     : 0.7036 +/- 0.0821
+Mean AUPRC     : 0.5585 +/- 0.0558
+Mean Brier     : 0.2290 +/- 0.0117
+Mean F1        : 0.4726 +/- 0.0438
+Mean Precision : 0.3888
+Mean Recall    : 0.8000
+============================================================
+
