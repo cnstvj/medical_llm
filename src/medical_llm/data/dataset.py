@@ -47,7 +47,7 @@ class MedicalDataset(Dataset):
 
 
 class MultiModalMedicalDataset(Dataset):
-    """PyTorch Dataset yielding both structured time-series tokens and clinical note tokens."""
+    """PyTorch Dataset yielding structured time-series tokens, continuous delta-times, and clinical note tokens."""
 
     def __init__(
         self,
@@ -58,6 +58,7 @@ class MultiModalMedicalDataset(Dataset):
         tokenizer: Any = None,
         max_lab_len: int = 512,
         max_text_len: int = 256,
+        delta_times: Optional[List[List[float]]] = None,
     ):
         self.lab_sequences = lab_sequences
         self.clinical_texts = clinical_texts
@@ -66,6 +67,7 @@ class MultiModalMedicalDataset(Dataset):
         self.tokenizer = tokenizer
         self.max_lab_len = max_lab_len
         self.max_text_len = max_text_len
+        self.delta_times = delta_times
 
     def __len__(self) -> int:
         return len(self.labels)
@@ -75,16 +77,23 @@ class MultiModalMedicalDataset(Dataset):
         seq = self.lab_sequences[idx]
         seq_ids = [self.vocab.get(token, self.vocab.get("[UNK]", 1)) for token in seq]
 
+        d_times = self.delta_times[idx] if self.delta_times is not None and idx < len(self.delta_times) else None
+
         if len(seq_ids) > self.max_lab_len - 1:
             seq_ids = seq_ids[:(self.max_lab_len - 1)]
+            if d_times is not None:
+                d_times = d_times[:(self.max_lab_len - 1)]
 
         cls_id = self.vocab.get("[CLS]", 2)
         pad_id = self.vocab.get("[PAD]", 0)
 
         seq_ids = [cls_id] + seq_ids
+        times_list = [0.0] + (d_times if d_times is not None else [0.0] * (len(seq_ids) - 1))
+
         pad_len = self.max_lab_len - len(seq_ids)
         lab_mask = [1] * len(seq_ids) + [0] * pad_len
         seq_ids += [pad_id] * pad_len
+        times_list += [0.0] * pad_len
 
         # 2. Unstructured clinical notes
         raw_text = str(self.clinical_texts[idx]) if idx < len(self.clinical_texts) and self.clinical_texts[idx] else ""
@@ -109,6 +118,7 @@ class MultiModalMedicalDataset(Dataset):
         return {
             "lab_ids": torch.tensor(seq_ids, dtype=torch.long),
             "lab_mask": torch.tensor(lab_mask, dtype=torch.long),
+            "delta_times": torch.tensor(times_list, dtype=torch.float32),
             "text_ids": text_ids,
             "text_mask": text_mask,
             "label": torch.tensor(label, dtype=torch.float32),
