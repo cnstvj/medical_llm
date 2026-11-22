@@ -5,6 +5,7 @@ Pipeline execution package.
 from medical_llm.pipeline.evaluator import evaluate_model, compute_metrics, print_metrics, run_test_evaluation
 from medical_llm.pipeline.trainer import train, prepare_data, evaluate
 from medical_llm.pipeline.cross_validator import train_fold, run_cross_validation
+from medical_llm.pipeline.unified_learner import train_unsupervised_stage, train_rl_stage
 
 __all__ = [
     "evaluate_model",
@@ -16,4 +17,6 @@ __all__ = [
     "evaluate",
     "train_fold",
     "run_cross_validation",
+    "train_unsupervised_stage",
+    "train_rl_stage",
 ]

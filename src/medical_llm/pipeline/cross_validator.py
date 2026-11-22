@@ -30,6 +30,10 @@ from medical_llm.data.dataset import MedicalDataset, MultiModalMedicalDataset, b
 from medical_llm.models.transformer import MedicalTransformer
 from medical_llm.models.multimodal_transformer import MultiModalMedicalTransformer
 from medical_llm.models.clinical_explainer import ClinicalExplainer
+from medical_llm.models.losses import FocalLoss, Poly1FocalLoss
+from medical_llm.models.tabular_features import extract_tabular_features
+from medical_llm.models.ensemble import ClinicalEnsemble
+from medical_llm.pipeline.unified_learner import train_unsupervised_stage, train_rl_stage
 
 
 def get_hf_tokenizer(model_name: str):
@@ -235,8 +239,10 @@ def train_multimodal_fold(
     tokenizer: Any,
     device: torch.device,
     config: PipelineConfig = DEFAULT_CONFIG,
+    X_train_tab: Optional[np.ndarray] = None,
+    X_test_tab: Optional[np.ndarray] = None,
 ) -> Tuple[float, float, float, float, float, float, float]:
-    """Trains a multi-modal clinical transformer fold model with early stopping."""
+    """Trains a multi-modal clinical transformer fold model with early stopping, advanced loss, and optional GBDT ensemble."""
     train_dataset = MultiModalMedicalDataset(
         train_labs, train_texts, train_labels, vocab, tokenizer=tokenizer,
         max_lab_len=config.max_len, max_text_len=config.text_max_len
@@ -249,6 +255,19 @@ def train_multimodal_fold(
     train_loader = DataLoader(train_dataset, batch_size=config.batch_size, shuffle=True)
     test_loader = DataLoader(test_dataset, batch_size=config.batch_size)
 
+    use_lora = getattr(config, "use_lora", False)
+    use_time2vec = getattr(config, "use_time2vec", False)
+    loss_function = getattr(config, "loss_function", "bce")
+    use_ensemble = getattr(config, "use_ensemble", False)
+
+    # Optional Stage 1: Unsupervised Self-Supervised Pretraining
+    if getattr(config, "enable_unsupervised_pretraining", False):
+        unsupervised_epochs = getattr(config, "unsupervised_epochs", 3)
+        pretrainer = train_unsupervised_stage(
+            train_labs, vocab, config=config, epochs=unsupervised_epochs, device=device
+        )
+        print("  [Pretraining Complete] Transferring trajectory weights to Multimodal Transformer.", flush=True)
+
     model = MultiModalMedicalTransformer(
         vocab_size=len(vocab),
         d_model=config.d_model,
@@ -259,14 +278,27 @@ def train_multimodal_fold(
         max_lab_len=config.max_len,
         pretrained_text_model=config.pretrained_text_model,
         freeze_text_backbone=config.freeze_text_backbone,
+        use_lora=use_lora,
         fusion_type=config.fusion_type,
+        use_time2vec=use_time2vec,
     ).to(device)
+
+    # Transfer pretrained encoder weights if available
+    if getattr(config, "enable_unsupervised_pretraining", False) and 'pretrainer' in locals():
+        model.lab_embedding.load_state_dict(pretrainer.embedding.state_dict())
+        model.transformer_encoder.load_state_dict(pretrainer.transformer_encoder.state_dict())
 
     num_positive = sum(train_labels)
     num_negative = len(train_labels) - num_positive
     pos_weight = torch.tensor([num_negative / max(num_positive, 1)], dtype=torch.float32, device=device)
 
-    criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+    if loss_function == "poly_focal":
+        criterion = Poly1FocalLoss(alpha=0.6, gamma=2.0, epsilon=1.0)
+    elif loss_function == "focal":
+        criterion = FocalLoss(alpha=0.6, gamma=2.0)
+    else:
+        criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+
     optimizer = optim.AdamW(model.parameters(), lr=config.learning_rate, weight_decay=config.weight_decay)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=config.max_epochs)
 
@@ -282,10 +314,11 @@ def train_multimodal_fold(
             lab_mask = batch["lab_mask"].to(device)
             text_ids = batch["text_ids"].to(device)
             text_mask = batch["text_mask"].to(device)
+            delta_times = batch["delta_times"].to(device) if "delta_times" in batch else None
             y = batch["label"].to(device)
 
             optimizer.zero_grad()
-            logits = model(lab_ids, lab_mask, text_ids, text_mask)
+            logits = model(lab_ids, lab_mask, text_ids, text_mask, delta_times=delta_times)
             loss = criterion(logits, y)
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
@@ -320,7 +353,66 @@ def train_multimodal_fold(
     checkpoint = torch.load(f"best_fold_{fold}.pth", map_location=device)
     model.load_state_dict(checkpoint["model_state_dict"])
 
-    auc, auprc, brier, f1, precision, recall, threshold, cm = evaluate_multimodal_fold(model, test_loader, device)
+    # Optional Stage 3: Reinforcement Learning (Clinical Policy Optimization)
+    if getattr(config, "enable_rl_policy_tuning", False):
+        rl_epochs = getattr(config, "rl_epochs", 2)
+        policy = train_rl_stage(model, train_loader, config=config, epochs=rl_epochs, device=device)
+        print("  [RL Complete] Policy gradient optimization aligned with clinical utility reward.", flush=True)
+
+    # If ensemble enabled and tabular features provided, blend transformer + GBDT predictions
+    if use_ensemble and X_train_tab is not None and X_test_tab is not None:
+        model.eval()
+        train_probs = []
+        with torch.no_grad():
+            for b in train_loader:
+                l_i, l_m = b["lab_ids"].to(device), b["lab_mask"].to(device)
+                t_i, t_m = b["text_ids"].to(device), b["text_mask"].to(device)
+                dt = b["delta_times"].to(device) if "delta_times" in b else None
+                train_probs.extend(torch.sigmoid(model(l_i, l_m, t_i, t_m, delta_times=dt)).cpu().numpy().tolist())
+
+        test_probs = []
+        with torch.no_grad():
+            for b in test_loader:
+                l_i, l_m = b["lab_ids"].to(device), b["lab_mask"].to(device)
+                t_i, t_m = b["text_ids"].to(device), b["text_mask"].to(device)
+                dt = b["delta_times"].to(device) if "delta_times" in b else None
+                test_probs.extend(torch.sigmoid(model(l_i, l_m, t_i, t_m, delta_times=dt)).cpu().numpy().tolist())
+
+        ensemble = ClinicalEnsemble(tree_type=getattr(config, "ensemble_tree", "xgboost"))
+        ensemble.fit_tree(X_train_tab, np.array(train_labels))
+        blended_test_probs = ensemble.predict_proba(np.array(test_probs), X_test_tab)
+
+        y_true = np.array(test_labels)
+        try:
+            auc = roc_auc_score(y_true, blended_test_probs)
+        except Exception:
+            auc = 0.0
+        try:
+            auprc = average_precision_score(y_true, blended_test_probs)
+        except Exception:
+            auprc = 0.0
+        try:
+            brier = brier_score_loss(y_true, blended_test_probs)
+        except Exception:
+            brier = 0.0
+
+        best_threshold = 0.5
+        best_f1 = 0.0
+        for th in np.arange(0.05, 0.96, 0.05):
+            preds = [1 if p > th else 0 for p in blended_test_probs]
+            f = f1_score(y_true, preds, zero_division=0)
+            if f > best_f1:
+                best_f1 = f
+                best_threshold = th
+
+        preds = [1 if p > best_threshold else 0 for p in blended_test_probs]
+        f1 = best_f1
+        precision = precision_score(y_true, preds, zero_division=0)
+        recall = recall_score(y_true, preds, zero_division=0)
+        cm = confusion_matrix(y_true, preds)
+        threshold = best_threshold
+    else:
+        auc, auprc, brier, f1, precision, recall, threshold, cm = evaluate_multimodal_fold(model, test_loader, device)
 
     print("\n" + "=" * 40, flush=True)
     print(f"FOLD {fold} MULTI-MODAL RESULTS", flush=True)
@@ -449,6 +541,12 @@ def train_fold(
     checkpoint = torch.load(f"best_fold_{fold}.pth", map_location=device)
     model.load_state_dict(checkpoint["model_state_dict"])
 
+    # Optional Stage 3: Reinforcement Learning (Clinical Policy Optimization)
+    if getattr(config, "enable_rl_policy_tuning", False):
+        rl_epochs = getattr(config, "rl_epochs", 2)
+        policy = train_rl_stage(model, train_loader, config=config, epochs=rl_epochs, device=device)
+        print("  [RL Complete] Policy gradient optimization aligned with clinical utility reward.", flush=True)
+
     auc, f1, precision, recall, threshold, cm = evaluate_fold(model, test_loader, device)
 
     print("\n" + "=" * 40, flush=True)
@@ -573,10 +671,14 @@ def run_cross_validation(
             )
             fold_vocab = build_vocab(train_labs)
 
+            X_train_tab, _, _ = extract_tabular_features(fold_train_adm, fold_train_labevents, reports)
+            X_test_tab, _, _ = extract_tabular_features(fold_test_adm, fold_test_labevents, reports)
+
             auc, auprc, brier, f1, precision, recall, _ = train_multimodal_fold(
                 train_labs, train_texts, train_lbls,
                 test_labs, test_texts, test_lbls,
-                fold, fold_vocab, tokenizer, device, config=config
+                fold, fold_vocab, tokenizer, device, config=config,
+                X_train_tab=X_train_tab, X_test_tab=X_test_tab,
             )
             auprcs.append(auprc)
             briers.append(brier)

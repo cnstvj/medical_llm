@@ -41,9 +41,20 @@ class PipelineConfig:
     pretrained_text_model: str = "emilyalsentzer/Bio_ClinicalBERT"
     text_max_len: int = 256
     text_embedding_dim: int = 768
-    fusion_type: str = "gated"  # "concat", "gated", "cross_attention"
-    freeze_text_backbone: bool = True
-    text_learning_rate: float = 2e-5
+    fusion_type: str = "cross_attention"  # "concat", "gated", "cross_attention"
+    freeze_text_backbone: bool = False
+    use_lora: bool = True
+    lora_r: int = 8
+    use_time2vec: bool = True
+    time_dim: int = 16
+    loss_function: str = "poly_focal"  # "bce", "focal", "poly_focal"
+    use_ensemble: bool = True
+    ensemble_tree: str = "xgboost"  # "xgboost", "lightgbm"
+    # Unified 3-Stage Learning Pipeline (Supervised, Unsupervised, Reinforcement)
+    enable_unsupervised_pretraining: bool = False
+    unsupervised_epochs: int = 5
+    enable_rl_policy_tuning: bool = False
+    rl_epochs: int = 3
 
     batch_size: int = 16
     learning_rate: float = 1e-3
@@ -97,6 +108,13 @@ def parse_pipeline_args(
     parser.add_argument("--splits", type=int, default=None, help="Number of CV splits")
     parser.add_argument("--label", "--tag", dest="label", type=str, default=None, help="Descriptive label for run logs")
     parser.add_argument("--rebuild", action="store_true", default=False, help="Force rebuilding preprocessed artifacts")
+    parser.add_argument("--no-ensemble", action="store_true", default=False, help="Disable GBDT ensemble")
+    parser.add_argument("--unsupervised", action="store_true", default=False, help="Enable Stage 1 Unsupervised Masked Pretraining")
+    parser.add_argument("--unsupervised-epochs", type=int, default=None, help="Number of unsupervised epochs")
+    parser.add_argument("--rl", action="store_true", default=False, help="Enable Stage 3 Reinforcement Learning Policy Tuning")
+    parser.add_argument("--rl-epochs", type=int, default=None, help="Number of RL epochs")
+    parser.add_argument("--unified-3stage", action="store_true", default=False, help="Enable full 3-Stage Pipeline (Unsupervised + Supervised + RL)")
+    parser.add_argument("--loss", type=str, default=None, choices=["bce", "focal", "poly_focal"], help="Loss function")
 
     parsed, _ = parser.parse_known_args(args)
 
@@ -126,6 +144,17 @@ def parse_pipeline_args(
         text_embedding_dim=base.text_embedding_dim,
         fusion_type=base.fusion_type,
         freeze_text_backbone=base.freeze_text_backbone,
+        use_lora=base.use_lora,
+        lora_r=base.lora_r,
+        use_time2vec=base.use_time2vec,
+        time_dim=base.time_dim,
+        loss_function=parsed.loss or base.loss_function,
+        use_ensemble=not parsed.no_ensemble if parsed.no_ensemble else base.use_ensemble,
+        ensemble_tree=base.ensemble_tree,
+        enable_unsupervised_pretraining=parsed.unsupervised or parsed.unified_3stage or base.enable_unsupervised_pretraining,
+        unsupervised_epochs=parsed.unsupervised_epochs or base.unsupervised_epochs,
+        enable_rl_policy_tuning=parsed.rl or parsed.unified_3stage or base.enable_rl_policy_tuning,
+        rl_epochs=parsed.rl_epochs or base.rl_epochs,
         text_learning_rate=base.text_learning_rate,
         batch_size=parsed.batch_size or base.batch_size,
         learning_rate=parsed.lr or base.learning_rate,
