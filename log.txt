@@ -92,3 +92,23 @@ Mean Precision : 0.3888
 Mean Recall    : 0.8000
 ============================================================
 
+
+============================================================
+[2026-11-22 15:13:55] EVENT: 5-FOLD MULTI-MODAL CV RUN
+RUN LABEL: upgraded-architecture-smoke
+============================================================
+Experiment Mode: FULL | Multi-Modal: True
+Fold 1: AUROC=0.4444 | AUPRC=0.3595 | F1=0.6000 | Precision=0.4286 | Recall=1.0000
+Fold 2: AUROC=0.4000 | AUPRC=0.4028 | F1=0.5714 | Precision=0.5000 | Recall=0.6667
+Fold 3: AUROC=0.1667 | AUPRC=0.3651 | F1=0.6000 | Precision=0.4286 | Recall=1.0000
+Fold 4: AUROC=0.5000 | AUPRC=0.6220 | F1=0.7273 | Precision=0.5714 | Recall=1.0000
+Fold 5: AUROC=0.6667 | AUPRC=0.8095 | F1=0.8000 | Precision=1.0000 | Recall=0.6667
+----------------------------------------
+Mean AUROC     : 0.4356 +/- 0.1620
+Mean AUPRC     : 0.5118 +/- 0.1774
+Mean Brier     : 0.2727 +/- 0.0313
+Mean F1        : 0.6597 +/- 0.0885
+Mean Precision : 0.5857
+Mean Recall    : 0.8667
+============================================================
+
