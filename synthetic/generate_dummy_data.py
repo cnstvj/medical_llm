@@ -36,7 +36,7 @@ N_LAB_ITEMS  = 20   # distinct lab item types
 LABS_PER_ADM = 30   # avg lab events per admission
 MORTALITY_RATE = 0.30  # fraction of admissions that end in death
 
-OUT_DIR = os.path.dirname(os.path.abspath(__file__))
+OUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "dummy")
 
 ADMISSION_TYPES = ["EMERGENCY", "ELECTIVE", "URGENT"]
 GENDERS         = ["M", "F"]
@@ -244,11 +244,11 @@ def generate_dummy_datasets(out_dir: str = OUT_DIR, verbose: bool = True) -> Dic
     reports    = make_reports(admissions)
 
     out = {
-        "ADMISSIONS_DUMMY.csv":                 admissions,
-        "PATIENTS_DUMMY.csv":                   patients,
-        "D_LABITEMS_DUMMY.csv":                 d_labitems,
-        "LABEVENTS_DUMMY.csv":                  labevents,
-        "structured_medical_records_DUMMY.csv": reports,
+        "admissions_dummy.csv":                 admissions,
+        "patients_dummy.csv":                   patients,
+        "d_labitems_dummy.csv":                 d_labitems,
+        "labevents_dummy.csv":                  labevents,
+        "structured_medical_records_dummy.csv": reports,
     }
 
     for fname, df in out.items():

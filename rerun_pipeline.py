@@ -26,7 +26,7 @@ from medical_llm.data.preprocessing import run_preprocessing
 from medical_llm.data.sequence_builder import run_sequence_builder
 from medical_llm.pipeline.cross_validator import run_cross_validation
 from medical_llm.utils.logging import log_event
-from generate_dummy_data import generate_dummy_datasets
+from synthetic.generate_dummy_data import generate_dummy_datasets
 
 
 def clean_artifacts(config=DEFAULT_CONFIG) -> None:

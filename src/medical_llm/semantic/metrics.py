@@ -4,16 +4,57 @@ Measures semantic preservation, unsupported-claim rate, directional accuracy,
 uncertainty coverage, and composite clinical faithfulness.
 """
 
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any, Tuple, Optional, Sequence, Union
 import re
 import numpy as np
 
 from medical_llm.semantic.representation import SemanticRepresentation
 from medical_llm.semantic.validator import ExplanationValidator, ValidationResult
+from medical_llm.utils.bleu import (
+    sentence_bleu,
+    corpus_bleu,
+    sentence_bleu_detailed,
+    corpus_bleu_detailed,
+    BLEUResult,
+)
 
 
 class SemanticEvaluationSuite:
     """Evaluates semantic communication fidelity between technical representations and natural language explanations."""
+
+    @staticmethod
+    def compute_sentence_bleu(
+        explanation: str,
+        references: Union[str, Sequence[str]],
+        weights: Sequence[float] = (0.25, 0.25, 0.25, 0.25),
+        smoothing: Optional[str] = "method1",
+        lowercase: bool = True,
+    ) -> float:
+        """Computes sentence-level BLEU-4 score between a generated explanation and reference text(s)."""
+        return sentence_bleu(
+            candidate=explanation,
+            references=references,
+            weights=weights,
+            smoothing=smoothing,
+            lowercase=lowercase,
+        )
+
+    @staticmethod
+    def compute_corpus_bleu(
+        explanations: Sequence[str],
+        references: Sequence[Sequence[str]],
+        weights: Sequence[float] = (0.25, 0.25, 0.25, 0.25),
+        smoothing: Optional[str] = "method1",
+        lowercase: bool = True,
+    ) -> float:
+        """Computes corpus-level BLEU score across a dataset of explanations."""
+        return corpus_bleu(
+            candidates=explanations,
+            references=references,
+            weights=weights,
+            smoothing=smoothing,
+            lowercase=lowercase,
+        )
 
     @staticmethod
     def compute_semantic_preservation(
@@ -100,6 +141,7 @@ class SemanticEvaluationSuite:
         cls,
         explanations: List[str],
         semantic_reps: List[SemanticRepresentation],
+        reference_texts: Optional[Sequence[Union[str, Sequence[str]]]] = None,
     ) -> Dict[str, Any]:
         """Runs comprehensive batch evaluation over paired explanations and semantic representations."""
         assert len(explanations) == len(semantic_reps), "Counts must match"
@@ -146,7 +188,7 @@ class SemanticEvaluationSuite:
             + 0.20 * (1.0 - unsupported_claim_rate)
         )
 
-        return {
+        res: Dict[str, Any] = {
             "num_evaluated": len(explanations),
             "semantic_preservation_score": round(mean_preservation, 4),
             "unsupported_claim_rate": round(unsupported_claim_rate, 4),
@@ -157,3 +199,18 @@ class SemanticEvaluationSuite:
             "total_violations_flagged": len(all_violations),
             "sample_violations": all_violations[:5],
         }
+
+        if reference_texts is not None and len(reference_texts) == len(explanations):
+            corpus_refs = [
+                [r] if isinstance(r, str) else list(r)
+                for r in reference_texts
+            ]
+            c_bleu = cls.compute_corpus_bleu(explanations, corpus_refs)
+            sent_bleus = [
+                cls.compute_sentence_bleu(exp, refs)
+                for exp, refs in zip(explanations, corpus_refs)
+            ]
+            res["corpus_bleu_4"] = round(c_bleu, 4)
+            res["mean_sentence_bleu_4"] = round(float(np.mean(sent_bleus)), 4)
+
+        return res

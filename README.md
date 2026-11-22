@@ -10,28 +10,35 @@ A modular PyTorch Transformer and clinical NLP pipeline for in-hospital mortalit
 medical_llm/
 ├── pyproject.toml                         # Package configuration & dependencies
 ├── README.md                              # Project documentation
-├── PIPELINE_ARCHITECTURE_STEP_BY_STEP.md # In-depth technical architecture guide
 ├── run.bat                                # Windows execution runner
 │
-├── Raw Data Files (MIMIC-III Cohort)
-│   ├── ADMISSIONS.csv                     # Hospital encounters & outcome flags
-│   ├── PATIENTS.csv                       # Demographics & birth dates
-│   ├── LABEVENTS.csv                      # Longitudinal laboratory observations
-│   ├── D_LABITEMS.csv                     # Lab item metadata & analyte labels
-│   └── structured_medical_records.csv     # Unstructured admission & triage notes
+├── data/                                  # All CSV data datasets
+│   ├── real/                              # Real MIMIC-III cohort datasets
+│   │   ├── admissions.csv                 # Hospital encounters & outcome flags
+│   │   ├── patients.csv                   # Demographics & birth dates
+│   │   ├── labevents.csv                  # Longitudinal laboratory observations
+│   │   ├── d_labitems.csv                 # Lab item metadata & analyte labels
+│   │   └── structured_medical_records.csv # Clinical notes & triage reports
+│   └── dummy/                             # Synthetic dummy datasets for rapid local testing
+│       ├── admissions_dummy.csv
+│       ├── patients_dummy.csv
+│       ├── labevents_dummy.csv
+│       ├── d_labitems_dummy.csv
+│       ├── structured_medical_records_dummy.csv
+│       └── chartevents_dummy.csv
 │
-├── Top-Level Execution Runners
+├── CLI Entry Points
 │   ├── rerun_pipeline.py                  # End-to-end pipeline orchestrator
+│   ├── train.py                           # CLI: single model training
+│   ├── cross_validate.py                  # CLI: 5-fold stratified cross-validation
+│   └── test.py                            # CLI: checkpoint evaluation & audit
+│
+├── synthetic/                             # Synthetic data & demo utilities
 │   ├── generate_dummy_data.py             # Synthetic cohort generator for rapid testing
-│   ├── demo_semantic_explainer.py         # NLP Semantic Explainer demonstration
-│   ├── preprocessing.py                   # CLI wrapper: data cleaning & temporal filtering
-│   ├── sequence_builder.py                # CLI wrapper: temporal token sequence assembly
-│   ├── train.py                           # CLI wrapper: single model training
-│   ├── cross_validate.py                  # CLI wrapper: 5-fold stratified cross-validation
-│   ├── test.py                            # CLI wrapper: checkpoint evaluation & audit
-│   ├── dataset.py                         # Backward-compatible API wrapper
-│   ├── model.py                           # Backward-compatible API wrapper
-│   └── quantile_utils.py                  # Backward-compatible API wrapper
+│   └── demo_semantic_explainer.py         # NLP Semantic Explainer demonstration
+│
+├── docs/                                  # Documentation
+│   └── pipeline_architecture.md           # In-depth step-by-step technical architecture
 │
 ├── src/medical_llm/                       # Canonical Python Package
 │   ├── __init__.py                        # Package initialization
@@ -116,7 +123,7 @@ Requirements:
 
 ### Rapid Synthetic Test Run (No Production MIMIC Required)
 ```bash
-python generate_dummy_data.py
+python synthetic/generate_dummy_data.py
 python rerun_pipeline.py --dummy
 ```
 To run rapidly on CPU without loading heavy BERT weights:
@@ -133,14 +140,12 @@ python rerun_pipeline.py --label "Production MIMIC-III Full Run"
 ### Run Semantic Communication & Explanation Demo
 Demonstrates the conversion of technical model outputs and decile tokens into a structured semantic representation and clinician-readable narrative with automated safety validation:
 ```bash
-python demo_semantic_explainer.py
+python synthetic/demo_semantic_explainer.py
 ```
 
 ### Individual CLI Steps
 Every runner supports common flags (`--dummy`, `--unimodal`, `--multimodal`, `--mode <MODE>`, `--epochs <N>`):
 
-- **Data Preprocessing**: `python preprocessing.py`
-- **Sequence Building**: `python sequence_builder.py`
 - **Single Model Training**: `python train.py` (or `python train.py --dummy`)
 - **5-Fold Cross Validation**: `python cross_validate.py` (or `python cross_validate.py --dummy`)
 - **Model Evaluation**: `python test.py` (or `python test.py --dummy`)
@@ -149,7 +154,7 @@ Every runner supports common flags (`--dummy`, `--unimodal`, `--multimodal`, `--
 
 ## 5. Running the Test Suite
 
-Execute all 27 unit and integration tests across data leakage shields, neural models, and the semantic communication system:
+Execute all unit and integration tests across data leakage shields, neural models, and the semantic communication system:
 
 ```bash
 pytest -v
@@ -182,3 +187,9 @@ rationale = ClinicalExplainer.generate_patient_rationale(
 print("Narrative:", rationale["clinical_narrative"])
 print("Audit Status:", "PASSED" if rationale["validation"]["is_valid"] else "FLAGGED")
 ```
+
+---
+
+## 7. Documentation
+
+For a comprehensive step-by-step architectural deep-dive, see [docs/pipeline_architecture.md](docs/pipeline_architecture.md).
