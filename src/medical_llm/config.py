@@ -43,6 +43,7 @@ class PipelineConfig:
     text_embedding_dim: int = 768
     fusion_type: str = "cross_attention"  # "concat", "gated", "cross_attention"
     freeze_text_backbone: bool = False
+    text_learning_rate: float = 2e-5
     use_lora: bool = True
     lora_r: int = 8
     use_time2vec: bool = True

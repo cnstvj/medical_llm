@@ -17,6 +17,7 @@ from medical_llm.models.losses import FocalLoss, Poly1FocalLoss
 from medical_llm.models.multimodal_transformer import BidirectionalCrossAttentionFusion, MultiModalMedicalTransformer
 from medical_llm.models.tabular_features import extract_tabular_features
 from medical_llm.models.ensemble import ClinicalEnsemble
+from medical_llm.config import parse_pipeline_args, PipelineConfig
 
 
 class TestUpgradedArchitecture(unittest.TestCase):
@@ -81,6 +82,25 @@ class TestUpgradedArchitecture(unittest.TestCase):
         blended = ensemble.predict_proba(trans_probs, X)
         self.assertEqual(len(blended), 2)
         self.assertTrue(all(0.0 <= p <= 1.0 for p in blended))
+
+    def test_pipeline_config_and_args_parsing(self):
+        args = [
+            "--multimodal",
+            "--unified-3stage",
+            "--unsupervised-epochs", "5",
+            "--epochs", "15",
+            "--rl-epochs", "3",
+            "--label", "gpu-unified-3stage",
+        ]
+        cfg, dummy, label = parse_pipeline_args(args)
+        self.assertTrue(cfg.use_multimodal_nlp)
+        self.assertTrue(cfg.enable_unsupervised_pretraining)
+        self.assertTrue(cfg.enable_rl_policy_tuning)
+        self.assertEqual(cfg.unsupervised_epochs, 5)
+        self.assertEqual(cfg.epochs, 15)
+        self.assertEqual(cfg.rl_epochs, 3)
+        self.assertEqual(label, "gpu-unified-3stage")
+        self.assertEqual(cfg.text_learning_rate, 2e-5)
 
 
 if __name__ == "__main__":
