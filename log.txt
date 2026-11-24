@@ -172,3 +172,43 @@ Mean Precision : 0.7850
 Mean Recall    : 0.8000
 ============================================================
 
+
+============================================================
+[2026-11-24 20:07:40] EVENT: 5-FOLD MULTI-MODAL CV RUN
+RUN LABEL: dummy-smoke-test
+============================================================
+Experiment Mode: FULL | Multi-Modal: True
+Fold 1: AUROC=0.2917 | AUPRC=0.3530 | F1=0.0000 | Precision=0.0000 | Recall=0.0000
+Fold 2: AUROC=0.2083 | AUPRC=0.3292 | F1=0.0000 | Precision=0.0000 | Recall=0.0000
+Fold 3: AUROC=0.6786 | AUPRC=0.6361 | F1=0.2857 | Precision=0.3333 | Recall=0.2500
+Fold 4: AUROC=0.7778 | AUPRC=0.8095 | F1=0.5000 | Precision=0.4000 | Recall=0.6667
+Fold 5: AUROC=0.4400 | AUPRC=0.4860 | F1=0.0000 | Precision=0.0000 | Recall=0.0000
+----------------------------------------
+Mean AUROC     : 0.4793 +/- 0.2186
+Mean AUPRC     : 0.5227 +/- 0.1804
+Mean Brier     : 0.2643 +/- 0.0374
+Mean F1        : 0.1571 +/- 0.2040
+Mean Precision : 0.1467
+Mean Recall    : 0.1833
+============================================================
+
+
+============================================================
+[2026-11-24 20:13:41] EVENT: 5-FOLD MULTI-MODAL CV RUN
+RUN LABEL: reclaimed-full-cohort-push-benchmark
+============================================================
+Experiment Mode: FULL | Multi-Modal: True
+Fold 1: AUROC=0.9338 | AUPRC=0.9082 | F1=0.6667 | Precision=1.0000 | Recall=0.5000
+Fold 2: AUROC=0.8162 | AUPRC=0.8261 | F1=0.7692 | Precision=1.0000 | Recall=0.6250
+Fold 3: AUROC=0.9276 | AUPRC=0.8820 | F1=0.5455 | Precision=1.0000 | Recall=0.3750
+Fold 4: AUROC=0.7171 | AUPRC=0.4750 | F1=0.3333 | Precision=0.5000 | Recall=0.2500
+Fold 5: AUROC=0.8456 | AUPRC=0.7928 | F1=0.5714 | Precision=0.6667 | Recall=0.5000
+----------------------------------------
+Mean AUROC     : 0.8481 +/- 0.0798
+Mean AUPRC     : 0.7768 +/- 0.1563
+Mean Brier     : 0.1571 +/- 0.0234
+Mean F1        : 0.5772 +/- 0.1452
+Mean Precision : 0.8333
+Mean Recall    : 0.4500
+============================================================
+

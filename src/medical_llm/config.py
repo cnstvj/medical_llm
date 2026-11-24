@@ -57,6 +57,7 @@ class PipelineConfig:
     ensemble_tree: str = "xgboost"  # "xgboost", "lightgbm"
     ensemble_transformer_weight: float = 0.55
     ensemble_tree_weight: float = 0.45
+    threshold_metric: str = "f1"  # "f1", "youden"
     # Unified 3-Stage Learning Pipeline (Supervised, Unsupervised, Reinforcement)
     enable_unsupervised_pretraining: bool = False
     unsupervised_epochs: int = 10
@@ -122,6 +123,7 @@ def parse_pipeline_args(
     parser.add_argument("--rl-epochs", type=int, default=None, help="Number of RL epochs")
     parser.add_argument("--unified-3stage", action="store_true", default=False, help="Enable full 3-Stage Pipeline (Unsupervised + Supervised + RL)")
     parser.add_argument("--loss", type=str, default=None, choices=["bce", "focal", "poly_focal"], help="Loss function")
+    parser.add_argument("--threshold-metric", type=str, default=None, choices=["f1", "youden"], help="Threshold optimization metric")
 
     parsed, _ = parser.parse_known_args(args)
 
@@ -164,6 +166,7 @@ def parse_pipeline_args(
         ensemble_tree=base.ensemble_tree,
         ensemble_transformer_weight=base.ensemble_transformer_weight,
         ensemble_tree_weight=base.ensemble_tree_weight,
+        threshold_metric=parsed.threshold_metric or base.threshold_metric,
         enable_unsupervised_pretraining=parsed.unsupervised or parsed.unified_3stage or base.enable_unsupervised_pretraining,
         unsupervised_epochs=parsed.unsupervised_epochs or base.unsupervised_epochs,
         enable_rl_policy_tuning=parsed.rl or parsed.unified_3stage or base.enable_rl_policy_tuning,

@@ -45,8 +45,42 @@ def get_hf_tokenizer(model_name: str):
         return None
 
 
+def find_optimal_threshold(y_true: np.ndarray, y_probs: np.ndarray, metric: str = "f1") -> float:
+    """Finds optimal decision threshold strictly on training fold predictions."""
+    if len(y_true) == 0 or len(np.unique(y_true)) < 2:
+        return 0.5
+
+    best_threshold = 0.5
+    best_score = -1.0
+    best_prec = -1.0
+
+    for th in np.arange(0.05, 0.96, 0.05):
+        preds = (y_probs >= th).astype(int)
+        if metric == "f1":
+            score = f1_score(y_true, preds, zero_division=0)
+            prec = precision_score(y_true, preds, zero_division=0)
+            if (score > best_score) or (score == best_score and prec > best_prec) or (score == best_score and prec == best_prec and abs(th - 0.5) < abs(best_threshold - 0.5)):
+                best_score = score
+                best_prec = prec
+                best_threshold = float(th)
+        elif metric == "youden":
+            rec = recall_score(y_true, preds, zero_division=0)
+            tn = np.sum((y_true == 0) & (preds == 0))
+            fp = np.sum((y_true == 0) & (preds == 1))
+            spec = tn / max(tn + fp, 1)
+            score = rec + spec - 1.0
+            if score > best_score:
+                best_score = score
+                best_threshold = float(th)
+
+    return best_threshold
+
+
 def evaluate_multimodal_fold(
-    model: torch.nn.Module, loader: DataLoader, device: torch.device
+    model: torch.nn.Module,
+    loader: DataLoader,
+    device: torch.device,
+    threshold: Optional[float] = None,
 ) -> Tuple[float, float, float, float, float, float, float, np.ndarray]:
     """Evaluates multi-modal model and returns metrics (auroc, auprc, brier, f1, precision, recall, threshold, cm)."""
     model.eval()
@@ -59,9 +93,10 @@ def evaluate_multimodal_fold(
             lab_mask = batch["lab_mask"].to(device)
             text_ids = batch["text_ids"].to(device)
             text_mask = batch["text_mask"].to(device)
+            delta_times = batch["delta_times"].to(device) if "delta_times" in batch else None
             y = batch["label"]
 
-            logits = model(lab_ids, lab_mask, text_ids, text_mask)
+            logits = model(lab_ids, lab_mask, text_ids, text_mask, delta_times=delta_times)
             p = torch.sigmoid(logits)
 
             probs.extend(p.cpu().numpy().tolist())
@@ -71,12 +106,12 @@ def evaluate_multimodal_fold(
     labels_arr = np.array(labels)
 
     try:
-        auc = roc_auc_score(labels_arr, probs_arr)
+        auc = roc_auc_score(labels_arr, probs_arr) if len(np.unique(labels_arr)) > 1 else 0.0
     except Exception:
         auc = 0.0
 
     try:
-        auprc = average_precision_score(labels_arr, probs_arr)
+        auprc = average_precision_score(labels_arr, probs_arr) if len(np.unique(labels_arr)) > 1 else 0.0
     except Exception:
         auprc = 0.0
 
@@ -85,29 +120,25 @@ def evaluate_multimodal_fold(
     except Exception:
         brier = 0.0
 
-    best_threshold = 0.5
-    best_f1 = 0.0
-    best_prec = 0.0
+    if threshold is not None:
+        eval_threshold = float(threshold)
+    else:
+        eval_threshold = find_optimal_threshold(labels_arr, probs_arr, metric="f1")
 
-    for threshold in np.arange(0.05, 0.96, 0.05):
-        preds = [1 if p > threshold else 0 for p in probs_arr]
-        f1 = f1_score(labels_arr, preds, zero_division=0)
-        p = precision_score(labels_arr, preds, zero_division=0)
-        if f1 > best_f1 or (f1 == best_f1 and p > best_prec) or (f1 == best_f1 and p == best_prec and abs(threshold - 0.5) < abs(best_threshold - 0.5)):
-            best_f1 = f1
-            best_prec = p
-            best_threshold = threshold
-
-    preds = [1 if p > best_threshold else 0 for p in probs_arr]
+    preds = (probs_arr >= eval_threshold).astype(int)
+    f1 = f1_score(labels_arr, preds, zero_division=0)
     precision = precision_score(labels_arr, preds, zero_division=0)
     recall = recall_score(labels_arr, preds, zero_division=0)
     cm = confusion_matrix(labels_arr, preds)
 
-    return auc, auprc, brier, best_f1, precision, recall, best_threshold, cm
+    return auc, auprc, brier, f1, precision, recall, eval_threshold, cm
 
 
 def evaluate_fold(
-    model: torch.nn.Module, loader: DataLoader, device: torch.device
+    model: torch.nn.Module,
+    loader: DataLoader,
+    device: torch.device,
+    threshold: Optional[float] = None,
 ) -> Tuple[float, float, float, float, float, np.ndarray]:
     """Evaluates standard fold model and returns metrics (auroc, f1, precision, recall, threshold, confusion matrix)."""
     model.eval()
@@ -122,31 +153,63 @@ def evaluate_fold(
             logits = model(x, mask)
             p = torch.sigmoid(logits)
 
-            probs.extend(p.cpu().numpy())
-            labels.extend(y.numpy())
+            probs.extend(p.cpu().numpy().tolist())
+            labels.extend(y.numpy().tolist())
+
+    probs_arr = np.array(probs)
+    labels_arr = np.array(labels)
 
     try:
-        auc = roc_auc_score(labels, probs)
+        auc = roc_auc_score(labels_arr, probs_arr) if len(np.unique(labels_arr)) > 1 else 0.0
     except Exception:
         auc = 0.0
 
-    best_threshold = 0.5
-    best_f1 = 0.0
+    if threshold is not None:
+        eval_threshold = float(threshold)
+    else:
+        eval_threshold = find_optimal_threshold(labels_arr, probs_arr, metric="f1")
 
-    for threshold in np.arange(0.05, 0.96, 0.05):
-        preds = [1 if p > threshold else 0 for p in probs]
-        f1 = f1_score(labels, preds, zero_division=0)
-        if f1 > best_f1:
-            best_f1 = f1
-            best_threshold = threshold
+    preds = (probs_arr >= eval_threshold).astype(int)
+    f1 = f1_score(labels_arr, preds, zero_division=0)
+    precision = precision_score(labels_arr, preds, zero_division=0)
+    recall = recall_score(labels_arr, preds, zero_division=0)
+    cm = confusion_matrix(labels_arr, preds)
 
-    preds = [1 if p > best_threshold else 0 for p in probs]
+    return auc, f1, precision, recall, eval_threshold, cm
 
-    precision = precision_score(labels, preds, zero_division=0)
-    recall = recall_score(labels, preds, zero_division=0)
-    cm = confusion_matrix(labels, preds)
 
-    return auc, best_f1, precision, recall, best_threshold, cm
+def synthesize_clinical_text(
+    age: Any,
+    gender: Any,
+    admission_type: Any,
+    diagnosis: Any,
+    raw_text: Optional[str] = None,
+) -> str:
+    """
+    Synthesizes structured EHR clinical text to eliminate note presence leakage.
+    Provides semantic clinical input across 100% of admissions for Bio_ClinicalBERT.
+    """
+    try:
+        age_val = int(age) if pd.notnull(age) else 50
+        age_str = f"{age_val}"
+    except Exception:
+        age_str = "adult"
+
+    gender_raw = str(gender).upper().strip() if pd.notnull(gender) else ""
+    gender_map = {"M": "male", "F": "female"}
+    gender_str = gender_map.get(gender_raw, gender_raw if gender_raw else "patient")
+
+    adm_type_raw = str(admission_type).strip() if pd.notnull(admission_type) else "routine"
+    adm_str = adm_type_raw.lower()
+
+    diag_raw = str(diagnosis).strip() if pd.notnull(diagnosis) and str(diagnosis).strip() != "" else "unspecified condition"
+
+    clean_note = str(raw_text).strip() if pd.notnull(raw_text) and str(raw_text).strip() != "" and str(raw_text).lower() != "nan" else ""
+
+    if clean_note:
+        return f"Diagnosis: {diag_raw}. {clean_note}"
+    else:
+        return f"{age_str}-year-old {gender_str} admitted via {adm_str} with {diag_raw}."
 
 
 def build_multimodal_fold_data(
@@ -154,8 +217,9 @@ def build_multimodal_fold_data(
     labevents_processed: pd.DataFrame,
     reports_df: pd.DataFrame,
     experiment_mode: str = "FULL",
-) -> Tuple[List[List[str]], List[str], List[int]]:
-    """Builds paired structured lab token sequences, clean clinical texts, and labels."""
+    return_delta_times: bool = False,
+):
+    """Builds paired structured lab token sequences, clean clinical texts, and labels with genuine delta times."""
     labevents = labevents_processed.copy()
     labevents["charttime"] = pd.to_datetime(labevents["charttime"])
     labevents = labevents.sort_values(by=["hadm_id", "charttime"])
@@ -164,11 +228,15 @@ def build_multimodal_fold_data(
 
     df = pd.merge(admissions_df, grouped, on="hadm_id", how="left")
     df["event_token"] = df["event_token"].apply(lambda x: x if isinstance(x, list) else [])
+    has_delta = "delta_times" in df.columns
+    if has_delta:
+        df["delta_times"] = df["delta_times"].apply(lambda x: x if isinstance(x, list) else [])
     df = pd.merge(df, reports_df, on="hadm_id", how="left")
 
     lab_sequences = []
     clinical_texts = []
     labels = []
+    delta_times_list = []
 
     for _, row in df.iterrows():
         age_bucket = int(row["age"] // 10) * 10 if pd.notnull(row["age"]) else 0
@@ -177,12 +245,31 @@ def build_multimodal_fold_data(
         adm_type_token = f"ADM_{str(row['admission_type']).replace(' ', '_')}"
 
         seq = [age_token, gender_token, adm_type_token, "[SEP]"]
-        seq.extend(row["event_token"])
+        event_tokens = row["event_token"]
+        seq.extend(event_tokens)
+
+        event_deltas = row["delta_times"] if has_delta and isinstance(row["delta_times"], list) else [0.0] * len(event_tokens)
+        seq_deltas = [0.0, 0.0, 0.0, 0.0] + event_deltas
 
         lab_sequences.append(seq)
-        clinical_texts.append(str(row["clean_text"]) if pd.notnull(row["clean_text"]) else "")
+        delta_times_list.append(seq_deltas)
+
+        # Synthesize structured clinical text across 100% admissions
+        diag = row.get("diagnosis", "")
+        clean_txt = row.get("clean_text", "")
+        clinical_texts.append(
+            synthesize_clinical_text(
+                row.get("age"),
+                row.get("gender"),
+                row.get("admission_type"),
+                diag,
+                clean_txt,
+            )
+        )
         labels.append(int(row["target"]) if pd.notnull(row["target"]) else 0)
 
+    if return_delta_times:
+        return lab_sequences, clinical_texts, labels, delta_times_list
     return lab_sequences, clinical_texts, labels
 def build_fold_sequences(
     admissions_df: pd.DataFrame,
@@ -244,15 +331,19 @@ def train_multimodal_fold(
     config: PipelineConfig = DEFAULT_CONFIG,
     X_train_tab: Optional[np.ndarray] = None,
     X_test_tab: Optional[np.ndarray] = None,
+    train_delta_times: Optional[List[List[float]]] = None,
+    test_delta_times: Optional[List[List[float]]] = None,
 ) -> Tuple[float, float, float, float, float, float, float]:
     """Trains a multi-modal clinical transformer fold model with early stopping, advanced loss, and optional GBDT ensemble."""
     train_dataset = MultiModalMedicalDataset(
         train_labs, train_texts, train_labels, vocab, tokenizer=tokenizer,
-        max_lab_len=config.max_len, max_text_len=config.text_max_len
+        max_lab_len=config.max_len, max_text_len=config.text_max_len,
+        delta_times=train_delta_times,
     )
     test_dataset = MultiModalMedicalDataset(
         test_labs, test_texts, test_labels, vocab, tokenizer=tokenizer,
-        max_lab_len=config.max_len, max_text_len=config.text_max_len
+        max_lab_len=config.max_len, max_text_len=config.text_max_len,
+        delta_times=test_delta_times,
     )
 
     train_loader = DataLoader(train_dataset, batch_size=config.batch_size, shuffle=True)
@@ -386,59 +477,64 @@ def train_multimodal_fold(
             f"best_fold_{fold}.pth",
         )
 
+    # Compute model predictions on train set (for leak-free threshold optimization and tree fitting)
+    model.eval()
+    train_probs = []
+    with torch.no_grad():
+        eval_train_loader = DataLoader(train_dataset, batch_size=config.batch_size, shuffle=False)
+        for b in eval_train_loader:
+            l_i, l_m = b["lab_ids"].to(device), b["lab_mask"].to(device)
+            t_i, t_m = b["text_ids"].to(device), b["text_mask"].to(device)
+            dt = b["delta_times"].to(device) if "delta_times" in b else None
+            train_probs.extend(torch.sigmoid(model(l_i, l_m, t_i, t_m, delta_times=dt)).cpu().numpy().tolist())
+    train_probs_arr = np.array(train_probs)
+    y_train = np.array(train_labels)
+
+    # Compute model predictions on test set
+    test_probs = []
+    with torch.no_grad():
+        for b in test_loader:
+            l_i, l_m = b["lab_ids"].to(device), b["lab_mask"].to(device)
+            t_i, t_m = b["text_ids"].to(device), b["text_mask"].to(device)
+            dt = b["delta_times"].to(device) if "delta_times" in b else None
+            test_probs.extend(torch.sigmoid(model(l_i, l_m, t_i, t_m, delta_times=dt)).cpu().numpy().tolist())
+    test_probs_arr = np.array(test_probs)
+    y_true = np.array(test_labels)
+
     # If ensemble enabled and tabular features provided, blend transformer + GBDT predictions
     if use_ensemble and X_train_tab is not None and X_test_tab is not None:
-        model.eval()
-        test_probs = []
-        with torch.no_grad():
-            for b in test_loader:
-                l_i, l_m = b["lab_ids"].to(device), b["lab_mask"].to(device)
-                t_i, t_m = b["text_ids"].to(device), b["text_mask"].to(device)
-                dt = b["delta_times"].to(device) if "delta_times" in b else None
-                test_probs.extend(torch.sigmoid(model(l_i, l_m, t_i, t_m, delta_times=dt)).cpu().numpy().tolist())
-
         ensemble = ClinicalEnsemble(
             transformer_weight=getattr(config, "ensemble_transformer_weight", 0.55),
             tree_weight=getattr(config, "ensemble_tree_weight", 0.45),
             tree_type=getattr(config, "ensemble_tree", "xgboost"),
         )
-        ensemble.fit_tree(X_train_tab, np.array(train_labels))
-        blended_test_probs = ensemble.predict_proba(np.array(test_probs), X_test_tab)
+        ensemble.fit_tree(X_train_tab, y_train)
 
-        y_true = np.array(test_labels)
-        try:
-            auc = roc_auc_score(y_true, blended_test_probs)
-        except Exception:
-            auc = 0.0
-        try:
-            auprc = average_precision_score(y_true, blended_test_probs)
-        except Exception:
-            auprc = 0.0
-        try:
-            brier = brier_score_loss(y_true, blended_test_probs)
-        except Exception:
-            brier = 0.0
+        # Optimize threshold strictly on training fold predictions (0% snooping)
+        blended_train_probs = ensemble.predict_proba(train_probs_arr, X_train_tab)
+        th_metric = getattr(config, "threshold_metric", "f1")
+        opt_threshold = find_optimal_threshold(y_train, blended_train_probs, metric=th_metric)
 
-        best_threshold = 0.5
-        best_f1 = 0.0
-        best_prec = 0.0
-        for th in np.arange(0.05, 0.96, 0.05):
-            preds = [1 if p > th else 0 for p in blended_test_probs]
-            f = f1_score(y_true, preds, zero_division=0)
-            p = precision_score(y_true, preds, zero_division=0)
-            if f > best_f1 or (f == best_f1 and p > best_prec) or (f == best_f1 and p == best_prec and abs(th - 0.5) < abs(best_threshold - 0.5)):
-                best_f1 = f
-                best_prec = p
-                best_threshold = th
+        # Evaluate on test fold out-of-sample
+        blended_test_probs = ensemble.predict_proba(test_probs_arr, X_test_tab)
 
-        preds = [1 if p > best_threshold else 0 for p in blended_test_probs]
-        f1 = best_f1
+        auc = roc_auc_score(y_true, blended_test_probs) if len(np.unique(y_true)) > 1 else 0.0
+        auprc = average_precision_score(y_true, blended_test_probs) if len(np.unique(y_true)) > 1 else 0.0
+        brier = brier_score_loss(y_true, blended_test_probs)
+
+        preds = (blended_test_probs >= opt_threshold).astype(int)
+        f1 = f1_score(y_true, preds, zero_division=0)
         precision = precision_score(y_true, preds, zero_division=0)
         recall = recall_score(y_true, preds, zero_division=0)
         cm = confusion_matrix(y_true, preds)
-        threshold = best_threshold
+        threshold = opt_threshold
     else:
-        auc, auprc, brier, f1, precision, recall, threshold, cm = evaluate_multimodal_fold(model, test_loader, device)
+        # Non-ensemble: optimize threshold strictly on training predictions
+        th_metric = getattr(config, "threshold_metric", "f1")
+        opt_threshold = find_optimal_threshold(y_train, train_probs_arr, metric=th_metric)
+        auc, auprc, brier, f1, precision, recall, threshold, cm = evaluate_multimodal_fold(
+            model, test_loader, device, threshold=opt_threshold
+        )
 
     print("\n" + "=" * 40, flush=True)
     print(f"FOLD {fold} MULTI-MODAL RESULTS", flush=True)
@@ -463,7 +559,8 @@ def train_multimodal_fold(
                 l_mask = sample_batch["lab_mask"][:1].to(device)
                 t_ids = sample_batch["text_ids"][:1].to(device)
                 t_mask = sample_batch["text_mask"][:1].to(device)
-                sample_prob = float(torch.sigmoid(model(l_ids, l_mask, t_ids, t_mask)).cpu().item())
+                dt = sample_batch["delta_times"][:1].to(device) if "delta_times" in sample_batch else None
+                sample_prob = float(torch.sigmoid(model(l_ids, l_mask, t_ids, t_mask, delta_times=dt)).cpu().item())
             except Exception:
                 pass
 
@@ -573,7 +670,21 @@ def train_fold(
         policy = train_rl_stage(model, train_loader, config=config, epochs=rl_epochs, device=device)
         print("  [RL Complete] Policy gradient optimization aligned with clinical utility reward.", flush=True)
 
-    auc, f1, precision, recall, threshold, cm = evaluate_fold(model, test_loader, device)
+    # Compute predictions on train set for leak-free threshold optimization
+    model.eval()
+    train_probs = []
+    with torch.no_grad():
+        eval_train_loader = DataLoader(train_dataset, batch_size=config.batch_size, shuffle=False)
+        for x, mask, y in eval_train_loader:
+            x, mask = x.to(device), mask.to(device)
+            train_probs.extend(torch.sigmoid(model(x, mask)).cpu().numpy().tolist())
+    train_probs_arr = np.array(train_probs)
+    y_train = np.array(train_labels)
+
+    opt_threshold = find_optimal_threshold(y_train, train_probs_arr, metric="f1")
+    auc, f1, precision, recall, threshold, cm = evaluate_fold(
+        model, test_loader, device, threshold=opt_threshold
+    )
 
     print("\n" + "=" * 40, flush=True)
     print(f"FOLD {fold} RESULTS", flush=True)
@@ -620,49 +731,33 @@ def run_cross_validation(
     dummy_mode: bool = False,
     run_label: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Runs Stratified 5-Fold Cross Validation pipeline with 0% quantile, vocab, AND patient leakage."""
+    """Runs Stratified 5-Fold Cross Validation pipeline across full cohort with 0% patient leakage."""
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print("Loading raw tables for leak-free cross validation...", flush=True)
     admissions, labevents, reports = load_raw_tables(config, dummy_mode=dummy_mode)
 
-    # --- Outer split: hold out 20% of PATIENTS (not admissions) ---
+    # 5-fold StratifiedGroupKFold on subject_id across full cohort (reclaiming all 129 admissions)
     subject_ids = admissions["subject_id"].values
+    labels = admissions["target"].values
 
-    gss = GroupShuffleSplit(n_splits=1, test_size=0.2, random_state=config.random_seed)
-    outer_train_idx, outer_val_idx = next(gss.split(admissions, admissions["target"], groups=subject_ids))
-
-    outer_train_admissions = admissions.iloc[outer_train_idx].copy()
-    outer_val_admissions = admissions.iloc[outer_val_idx].copy()
-
-    # ASSERT: zero patient overlap between outer train and outer validation
-    outer_train_sids = set(outer_train_admissions["subject_id"])
-    outer_val_sids = set(outer_val_admissions["subject_id"])
-    overlap = outer_train_sids & outer_val_sids
-    assert len(overlap) == 0, f"Outer split patient leakage! Overlapping subject_ids: {overlap}"
+    sgkf = StratifiedGroupKFold(n_splits=config.n_splits, shuffle=True, random_state=config.random_seed)
 
     print(
-        f"Outer split (patient-level, 0 overlap):\n"
-        f"  Train: {len(outer_train_admissions)} admissions ({len(outer_train_sids)} patients)\n"
-        f"  Val  : {len(outer_val_admissions)} admissions ({len(outer_val_sids)} patients)",
+        f"Full cohort 5-fold StratifiedGroupKFold (patient-level, 0 overlap):\n"
+        f"  Total admissions: {len(admissions)} ({len(set(subject_ids))} patients, {int(labels.sum())} deaths)",
         flush=True,
     )
 
     # Initialize tokenizer for multimodal mode
     tokenizer = get_hf_tokenizer(config.pretrained_text_model) if config.use_multimodal_nlp else None
 
-    # --- Inner CV: StratifiedGroupKFold grouped by subject_id ---
-    inner_subject_ids = outer_train_admissions["subject_id"].values
-    inner_labels = outer_train_admissions["target"].values
-
-    sgkf = StratifiedGroupKFold(n_splits=config.n_splits, shuffle=True, random_state=config.random_seed)
-
     aucs, auprcs, briers, f1s, precisions, recalls = [], [], [], [], [], []
 
     for fold, (train_idx, test_idx) in enumerate(
-        sgkf.split(outer_train_admissions, inner_labels, groups=inner_subject_ids), start=1
+        sgkf.split(admissions, labels, groups=subject_ids), start=1
     ):
-        fold_train_adm = outer_train_admissions.iloc[train_idx]
-        fold_test_adm = outer_train_admissions.iloc[test_idx]
+        fold_train_adm = admissions.iloc[train_idx]
+        fold_test_adm = admissions.iloc[test_idx]
 
         # ASSERT: zero patient overlap within fold
         fold_train_sids = set(fold_train_adm["subject_id"])
@@ -689,11 +784,11 @@ def run_cross_validation(
         fold_test_lab_proc = apply_quantiles_to_labevents(fold_test_labevents, fold_quantile_map)
 
         if config.use_multimodal_nlp:
-            train_labs, train_texts, train_lbls = build_multimodal_fold_data(
-                fold_train_adm, fold_train_lab_proc, reports, experiment_mode=config.experiment_mode
+            train_labs, train_texts, train_lbls, train_deltas = build_multimodal_fold_data(
+                fold_train_adm, fold_train_lab_proc, reports, experiment_mode=config.experiment_mode, return_delta_times=True
             )
-            test_labs, test_texts, test_lbls = build_multimodal_fold_data(
-                fold_test_adm, fold_test_lab_proc, reports, experiment_mode=config.experiment_mode
+            test_labs, test_texts, test_lbls, test_deltas = build_multimodal_fold_data(
+                fold_test_adm, fold_test_lab_proc, reports, experiment_mode=config.experiment_mode, return_delta_times=True
             )
             fold_vocab = build_vocab(train_labs)
 
@@ -706,6 +801,7 @@ def run_cross_validation(
                 test_labs, test_texts, test_lbls,
                 fold, fold_vocab, tokenizer, device, config=config,
                 X_train_tab=X_train_tab, X_test_tab=X_test_tab,
+                train_delta_times=train_deltas, test_delta_times=test_deltas,
             )
             auprcs.append(auprc)
             briers.append(brier)

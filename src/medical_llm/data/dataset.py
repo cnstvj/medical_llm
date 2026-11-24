@@ -88,7 +88,14 @@ class MultiModalMedicalDataset(Dataset):
         pad_id = self.vocab.get("[PAD]", 0)
 
         seq_ids = [cls_id] + seq_ids
-        times_list = [0.0] + (d_times if d_times is not None else [0.0] * (len(seq_ids) - 1))
+        if d_times is not None:
+            curr_len = len(seq_ids) - 1
+            sliced_d_times = list(d_times[:curr_len])
+            if len(sliced_d_times) < curr_len:
+                sliced_d_times += [0.0] * (curr_len - len(sliced_d_times))
+            times_list = [0.0] + sliced_d_times
+        else:
+            times_list = [0.0] * len(seq_ids)
 
         pad_len = self.max_lab_len - len(seq_ids)
         lab_mask = [1] * len(seq_ids) + [0] * pad_len

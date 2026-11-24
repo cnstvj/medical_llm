@@ -8,6 +8,19 @@ import numpy as np
 import pandas as pd
 
 
+# Diagnosis keyword indicators for clinical feature encoding
+DIAGNOSIS_INDICATORS = {
+    "diag_sepsis": ["SEPSIS", "SEPTIC"],
+    "diag_pneumonia": ["PNEUMONIA", "PNEUM"],
+    "diag_heart_failure": ["HEART FAILURE", "CHF", "CONGESTIVE"],
+    "diag_renal_disease": ["RENAL", "KIDNEY", "DIALYSIS"],
+    "diag_liver_disease": ["LIVER", "HEPATIC", "HEPATITIS", "CIRRHOSIS"],
+    "diag_respiratory": ["RESPIRATORY", "DYSPNEA", "SHORTNESS OF BREATH", "COPD", "HYPOXIA"],
+    "diag_stroke": ["STROKE", "TIA", "INFARCT", "INTRACRANIAL", "HEMORRHAG"],
+    "diag_cancer": ["CANCER", "CA/", "NEOPLASM", "MALIGNAN", "METASTA", "TUMOR", "LEUKEMIA", "LYMPHOMA"],
+}
+
+
 def extract_tabular_features(
     admissions_df: pd.DataFrame,
     labevents_df: pd.DataFrame,
@@ -17,6 +30,7 @@ def extract_tabular_features(
     """
     Extracts rich clinical tabular summary features per admission:
     - Demographics: Age, Gender, Admission Type
+    - Admission Diagnosis Indicators: Sepsis, Pneumonia, Heart Failure, Renal/Liver Disease, etc.
     - Lab Aggregates: Mean, Std, Min, Max, Count, Delta (first to last) per lab item
     - Clinical Note metadata: Word count, presence of report
     """
@@ -37,6 +51,7 @@ def extract_tabular_features(
         all_itemids = list(item_counts.index[:30])
 
     feature_names = ["age", "gender_is_m", "is_emergency"]
+    feature_names.extend(list(DIAGNOSIS_INDICATORS.keys()))
     for iid in all_itemids:
         feature_names.extend([f"lab_{iid}_min", f"lab_{iid}_max", f"lab_{iid}_mean", f"lab_{iid}_count", f"lab_{iid}_delta"])
     feature_names.extend(["note_char_count", "note_word_count"])
@@ -50,6 +65,12 @@ def extract_tabular_features(
         gender_m = 1.0 if str(adm.get("gender", "")).upper() == "M" else 0.0
         is_emerg = 1.0 if "EMERGENCY" in str(adm.get("admission_type", "")).upper() else 0.0
         row_feats.extend([age, gender_m, is_emerg])
+
+        # Diagnosis indicators
+        diag_str = str(adm.get("diagnosis", "")).upper()
+        for diag_key, keywords in DIAGNOSIS_INDICATORS.items():
+            has_diag = 1.0 if any(kw in diag_str for kw in keywords) else 0.0
+            row_feats.append(has_diag)
 
         # Labs
         hadm_labs = labs_grouped.get(hadm_id, None)

@@ -23,12 +23,13 @@ def time_gap_token(delta_hours: float) -> str:
 
 
 def build_temporal_sequences(labevents: pd.DataFrame, experiment_mode: str = "FULL") -> pd.DataFrame:
-    """Groups lab events by admission ID, sorts by charttime, and creates sequence of event and time tokens."""
+    """Groups lab events by admission ID, sorts by charttime, and creates sequence of event and time tokens with elapsed hours."""
     temporal_sequences = []
 
     for hadm_id, group in labevents.groupby("hadm_id"):
         group = group.sort_values("charttime")
         tokens = []
+        delta_times = []
         previous_time = None
 
         for _, row in group.iterrows():
@@ -36,17 +37,28 @@ def build_temporal_sequences(labevents: pd.DataFrame, experiment_mode: str = "FU
 
             if experiment_mode == "LABS":
                 tokens.append(row["event_token"])
+                if previous_time is not None:
+                    delta_hours = max(0.0, float((current_time - previous_time).total_seconds() / 3600.0))
+                else:
+                    delta_hours = 0.0
+                delta_times.append(delta_hours)
             else:
                 if previous_time is not None:
-                    delta_hours = (current_time - previous_time).total_seconds() / 3600
+                    delta_hours = max(0.0, float((current_time - previous_time).total_seconds() / 3600.0))
                     tokens.append(time_gap_token(delta_hours))
-                tokens.append(row["event_token"])
+                    delta_times.append(delta_hours)
+                    tokens.append(row["event_token"])
+                    delta_times.append(delta_hours)
+                else:
+                    tokens.append(row["event_token"])
+                    delta_times.append(0.0)
 
             previous_time = current_time
 
         temporal_sequences.append({
             "hadm_id": hadm_id,
-            "event_token": tokens
+            "event_token": tokens,
+            "delta_times": delta_times,
         })
 
     return pd.DataFrame(temporal_sequences)

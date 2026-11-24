@@ -48,8 +48,13 @@ def process_admissions_and_patients(admissions_df: pd.DataFrame, patients_df: pd
     adm_pat.loc[adm_pat["age"] > 89, "age"] = 90
     adm_pat["target"] = adm_pat["hospital_expire_flag"]
 
+    if "diagnosis" in adm_pat.columns:
+        adm_pat["diagnosis"] = adm_pat["diagnosis"].fillna("").astype(str)
+    else:
+        adm_pat["diagnosis"] = ""
+
     return adm_pat[
-        ["subject_id", "hadm_id", "admittime", "dischtime", "deathtime", "cutoff_time", "age", "gender", "admission_type", "target"]
+        ["subject_id", "hadm_id", "admittime", "dischtime", "deathtime", "cutoff_time", "age", "gender", "admission_type", "diagnosis", "target"]
     ]
 
 
