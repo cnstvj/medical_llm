@@ -112,3 +112,63 @@ Mean Precision : 0.5857
 Mean Recall    : 0.8667
 ============================================================
 
+
+============================================================
+[2026-11-24 15:11:06] EVENT: 5-FOLD MULTI-MODAL CV RUN
+RUN LABEL: gpu-unified-3stage
+============================================================
+Experiment Mode: FULL | Multi-Modal: True
+Fold 1: AUROC=0.3854 | AUPRC=0.3786 | F1=0.4286 | Precision=0.2727 | Recall=1.0000
+Fold 2: AUROC=0.7500 | AUPRC=0.5097 | F1=0.4286 | Precision=0.2727 | Recall=1.0000
+Fold 3: AUROC=0.8333 | AUPRC=0.6723 | F1=0.4444 | Precision=0.2857 | Recall=1.0000
+Fold 4: AUROC=0.5556 | AUPRC=0.3833 | F1=0.4444 | Precision=0.2857 | Recall=1.0000
+Fold 5: AUROC=0.7333 | AUPRC=0.5290 | F1=0.4444 | Precision=0.2857 | Recall=1.0000
+----------------------------------------
+Mean AUROC     : 0.6515 +/- 0.1609
+Mean AUPRC     : 0.4946 +/- 0.1085
+Mean Brier     : 0.2208 +/- 0.0056
+Mean F1        : 0.4381 +/- 0.0078
+Mean Precision : 0.2805
+Mean Recall    : 1.0000
+============================================================
+
+
+============================================================
+[2026-11-24 15:34:10] EVENT: 5-FOLD MULTI-MODAL CV RUN
+RUN LABEL: gpu-boosted-3stage-benchmark
+============================================================
+Experiment Mode: FULL | Multi-Modal: True
+Fold 1: AUROC=0.7188 | AUPRC=0.4952 | F1=0.5714 | Precision=0.5000 | Recall=0.6667
+Fold 2: AUROC=0.5312 | AUPRC=0.3367 | F1=0.4286 | Precision=0.2727 | Recall=1.0000
+Fold 3: AUROC=0.6444 | AUPRC=0.3722 | F1=0.6000 | Precision=0.4286 | Recall=1.0000
+Fold 4: AUROC=0.9444 | AUPRC=0.8968 | F1=0.7692 | Precision=0.7143 | Recall=0.8333
+Fold 5: AUROC=0.7222 | AUPRC=0.7028 | F1=0.6000 | Precision=0.7500 | Recall=0.5000
+----------------------------------------
+Mean AUROC     : 0.7122 +/- 0.1352
+Mean AUPRC     : 0.5608 +/- 0.2113
+Mean Brier     : 0.1808 +/- 0.0236
+Mean F1        : 0.5938 +/- 0.1083
+Mean Precision : 0.5331
+Mean Recall    : 0.8000
+============================================================
+
+
+============================================================
+[2026-11-24 15:55:34] EVENT: 5-FOLD MULTI-MODAL CV RUN
+RUN LABEL: gpu-boosted-3stage-benchmark
+============================================================
+Experiment Mode: FULL | Multi-Modal: True
+Fold 1: AUROC=1.0000 | AUPRC=1.0000 | F1=1.0000 | Precision=1.0000 | Recall=1.0000
+Fold 2: AUROC=0.9062 | AUPRC=0.8259 | F1=0.6667 | Precision=1.0000 | Recall=0.5000
+Fold 3: AUROC=0.7556 | AUPRC=0.4722 | F1=0.6667 | Precision=0.5000 | Recall=1.0000
+Fold 4: AUROC=0.8111 | AUPRC=0.7694 | F1=0.7273 | Precision=0.8000 | Recall=0.6667
+Fold 5: AUROC=0.8333 | AUPRC=0.6791 | F1=0.7143 | Precision=0.6250 | Recall=0.8333
+----------------------------------------
+Mean AUROC     : 0.8612 +/- 0.0845
+Mean AUPRC     : 0.7493 +/- 0.1737
+Mean Brier     : 0.1494 +/- 0.0316
+Mean F1        : 0.7550 +/- 0.1249
+Mean Precision : 0.7850
+Mean Recall    : 0.8000
+============================================================
+

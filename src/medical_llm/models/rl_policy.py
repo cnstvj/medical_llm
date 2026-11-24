@@ -15,16 +15,16 @@ from medical_llm.semantic.validator import ExplanationValidator
 class ClinicalRewardFunction:
     """
     Computes scalar clinical utility rewards based on:
-    1. Outcome utility matrix (heavy asymmetric penalty for false negatives)
-    2. Explanation faithfulness and absence of hallucinated diagnoses / treatments
+    1. Outcome utility matrix with rebalanced false positive penalty to prevent threshold saturation
+    2. Explanation faithfulness and absence of hallucinated diagnoses or treatments
     """
 
     def __init__(
         self,
-        tp_reward: float = 1.0,
-        tn_reward: float = 0.5,
-        fp_penalty: float = -0.5,
-        fn_penalty: float = -2.5,  # Missed mortality is catastrophic in clinical practice
+        tp_reward: float = 1.2,
+        tn_reward: float = 0.8,
+        fp_penalty: float = -1.2,  # Rebalanced penalty prevents over-prediction and restores precision
+        fn_penalty: float = -2.0,  # Asymmetric penalty preserves high sensitivity on critical mortality
         hallucination_penalty: float = -1.5,
     ):
         self.tp_reward = tp_reward
@@ -72,10 +72,10 @@ class ClinicalPolicyGradient(nn.Module):
     Policy Network wrapper for optimizing clinical triage decisions via REINFORCE policy gradients.
     """
 
-    def __init__(self, backbone_model: nn.Module):
+    def __init__(self, backbone_model: nn.Module, reward_fn: Optional[ClinicalRewardFunction] = None):
         super().__init__()
         self.backbone = backbone_model
-        self.reward_fn = ClinicalRewardFunction()
+        self.reward_fn = reward_fn or ClinicalRewardFunction()
 
     def forward(self, *args, **kwargs) -> torch.Tensor:
         """Returns action probabilities for [class_0 (discharge/low risk), class_1 (alert/high risk)]."""
@@ -110,9 +110,12 @@ class ClinicalPolicyGradient(nn.Module):
             rewards.append(r)
 
         rewards_tensor = torch.tensor(rewards, dtype=torch.float32, device=log_probs.device)
-        # Normalize rewards for gradient variance reduction
+        # Center rewards against baseline without class-imbalance variance distortion
         if len(rewards_tensor) > 1:
-            rewards_tensor = (rewards_tensor - rewards_tensor.mean()) / (rewards_tensor.std() + 1e-6)
+            baseline = float(rewards_tensor.mean().item())
+            advantages = (rewards_tensor - baseline).clamp(min=-3.0, max=3.0)
+        else:
+            advantages = rewards_tensor
 
-        policy_loss = -(log_probs * rewards_tensor).mean()
+        policy_loss = -(log_probs * advantages).mean()
         return policy_loss

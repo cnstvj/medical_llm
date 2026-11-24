@@ -5,7 +5,7 @@ via masked token reconstruction (BERT-style self-supervision).
 """
 
 import random
-from typing import Dict, Any, Tuple, List, Optional
+from typing import Dict, Any, Tuple, List, Optional, Union
 import torch
 import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
@@ -17,8 +17,8 @@ from medical_llm.models.time2vec import Time2Vec
 class MaskedTrajectoryDataset(Dataset):
     """
     Unsupervised dataset that dynamically masks tokens for self-supervised pretraining.
-    Standard BERT masking protocol:
-    - 15% of tokens selected for prediction
+    Supports dynamic masking probabilities (15% to 20%) over lab trajectory tokens:
+    - Dynamic percentage of tokens selected for prediction
     - Of selected: 80% replaced with [MASK], 10% random token, 10% kept unchanged
     """
 
@@ -26,7 +26,7 @@ class MaskedTrajectoryDataset(Dataset):
         self,
         sequences: List[List[str]],
         vocab: Dict[str, int],
-        mask_prob: float = 0.15,
+        mask_prob: Union[float, Tuple[float, float]] = (0.15, 0.20),
         max_len: int = 512,
     ):
         self.sequences = sequences
@@ -56,13 +56,19 @@ class MaskedTrajectoryDataset(Dataset):
         input_ids = list(seq_ids)
         targets = [-100] * len(seq_ids)  # PyTorch ignore_index
 
+        # Dynamic masking probability (sample per trajectory sequence)
+        if isinstance(self.mask_prob, (tuple, list)):
+            effective_mask_prob = random.uniform(self.mask_prob[0], self.mask_prob[1])
+        else:
+            effective_mask_prob = float(self.mask_prob)
+
         # Masking tokens (excluding special tokens)
         masked_indices = []
         for i in range(1, len(seq_ids)):
             token_id = seq_ids[i]
             if token_id in (self.cls_id, self.sep_id, self.pad_id):
                 continue
-            if random.random() < self.mask_prob:
+            if random.random() < effective_mask_prob:
                 masked_indices.append(i)
 
         # Ensure at least 1 token is masked if sequence has non-special tokens

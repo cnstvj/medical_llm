@@ -12,6 +12,7 @@ def extract_tabular_features(
     admissions_df: pd.DataFrame,
     labevents_df: pd.DataFrame,
     reports_df: Optional[pd.DataFrame] = None,
+    itemids: Optional[List[int]] = None,
 ) -> Tuple[np.ndarray, np.ndarray, List[str]]:
     """
     Extracts rich clinical tabular summary features per admission:
@@ -28,7 +29,13 @@ def extract_tabular_features(
     if reports_df is not None and "hadm_id" in reports_df.columns:
         reports_map = dict(zip(reports_df["hadm_id"], reports_df.get("clean_text", [""] * len(reports_df))))
 
-    all_itemids = sorted(labevents_df["itemid"].dropna().unique())[:30]  # top frequent items
+    if itemids is not None:
+        all_itemids = list(itemids)
+    else:
+        # Rank by true frequency in training labevents
+        item_counts = labevents_df["itemid"].dropna().value_counts()
+        all_itemids = list(item_counts.index[:30])
+
     feature_names = ["age", "gender_is_m", "is_emergency"]
     for iid in all_itemids:
         feature_names.extend([f"lab_{iid}_min", f"lab_{iid}_max", f"lab_{iid}_mean", f"lab_{iid}_count", f"lab_{iid}_delta"])

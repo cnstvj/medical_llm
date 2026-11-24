@@ -24,6 +24,7 @@ class ClinicalTextEncoder(nn.Module):
         freeze_backbone: bool = True,
         use_lora: bool = False,
         lora_r: int = 8,
+        dropout: float = 0.1,
     ):
         super().__init__()
         self.proj_dim = proj_dim
@@ -41,7 +42,7 @@ class ClinicalTextEncoder(nn.Module):
                         r=lora_r,
                         lora_alpha=lora_r * 2,
                         target_modules=["query", "value"],
-                        lora_dropout=0.1,
+                        lora_dropout=dropout,
                         bias="none",
                     )
                     self.bert = get_peft_model(self.bert, peft_config)
@@ -65,7 +66,7 @@ class ClinicalTextEncoder(nn.Module):
             nn.Linear(hidden_size, proj_dim),
             nn.LayerNorm(proj_dim),
             nn.GELU(),
-            nn.Dropout(0.1),
+            nn.Dropout(dropout),
         )
 
     def forward(self, input_ids: torch.Tensor, attention_mask: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -98,10 +99,14 @@ class BidirectionalCrossAttentionFusion(nn.Module):
     """
     Bidirectional Cross-Attention between EHR Trajectories and Clinical Notes.
     Enables lab sequence tokens to attend to clinical notes and notes to attend to lab events.
+    Includes temperature scaling to tune attention sharpness.
     """
 
-    def __init__(self, d_model: int, nhead: int = 4, dropout: float = 0.1):
+    def __init__(self, d_model: int, nhead: int = 4, dropout: float = 0.1, temperature: float = 1.0):
         super().__init__()
+        self.d_model = d_model
+        self.nhead = nhead
+        self.temperature = float(temperature)
         self.cross_attn_labs = nn.MultiheadAttention(d_model, nhead, dropout=dropout, batch_first=True)
         self.cross_attn_text = nn.MultiheadAttention(d_model, nhead, dropout=dropout, batch_first=True)
         
@@ -142,15 +147,17 @@ class BidirectionalCrossAttentionFusion(nn.Module):
             if not t_mask_bool.all(dim=-1).any():
                 text_pad_mask = t_mask_bool
 
-        # Labs query text
+        # Labs query text with temperature scaling
+        q_labs = h_labs / self.temperature if self.temperature != 1.0 else h_labs
         attn_labs, _ = self.cross_attn_labs(
-            query=h_labs, key=h_text, value=h_text, key_padding_mask=text_pad_mask
+            query=q_labs, key=h_text, value=h_text, key_padding_mask=text_pad_mask
         )
         h_labs_fused = self.norm_labs(h_labs + attn_labs)
 
-        # Text queries labs
+        # Text queries labs with temperature scaling
+        q_text = h_text / self.temperature if self.temperature != 1.0 else h_text
         attn_text, _ = self.cross_attn_text(
-            query=h_text, key=h_labs, value=h_labs, key_padding_mask=lab_pad_mask
+            query=q_text, key=h_labs, value=h_labs, key_padding_mask=lab_pad_mask
         )
         h_text_fused = self.norm_text(h_text + attn_text)
 
@@ -211,12 +218,14 @@ class MultiModalMedicalTransformer(nn.Module):
         use_lora: bool = False,
         lora_r: int = 8,
         fusion_type: str = "cross_attention",
+        fusion_temperature: float = 1.0,
         use_time2vec: bool = True,
         time_dim: int = 16,
     ):
         super().__init__()
         self.d_model = d_model
         self.fusion_type = fusion_type
+        self.fusion_temperature = fusion_temperature
         self.use_time2vec = use_time2vec
 
         # 1. Structured Time-Series Lab Encoder with Time2Vec
@@ -250,11 +259,12 @@ class MultiModalMedicalTransformer(nn.Module):
             freeze_backbone=freeze_text_backbone,
             use_lora=use_lora,
             lora_r=lora_r,
+            dropout=dropout,
         )
 
         # 3. Fusion Layer
         if fusion_type == "cross_attention":
-            self.fusion = BidirectionalCrossAttentionFusion(d_model, nhead=nhead, dropout=dropout)
+            self.fusion = BidirectionalCrossAttentionFusion(d_model, nhead=nhead, dropout=dropout, temperature=fusion_temperature)
             out_dim = d_model
         elif fusion_type == "gated":
             self.fusion = GatedCrossModalFusion(d_model, dropout=dropout)
@@ -263,7 +273,7 @@ class MultiModalMedicalTransformer(nn.Module):
             self.fusion = None
             out_dim = d_model * 2
         else:
-            self.fusion = BidirectionalCrossAttentionFusion(d_model, nhead=nhead, dropout=dropout)
+            self.fusion = BidirectionalCrossAttentionFusion(d_model, nhead=nhead, dropout=dropout, temperature=fusion_temperature)
             out_dim = d_model
 
         # 4. Classification & Prediction Head

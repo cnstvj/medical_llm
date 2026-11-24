@@ -77,6 +77,17 @@ class ClinicalEnsemble:
                 verbosity=-1,
             )
             self.tree_model.fit(X_train, y_train)
+        else:
+            from sklearn.ensemble import GradientBoostingClassifier
+            self.tree_model = GradientBoostingClassifier(
+                n_estimators=100,
+                max_depth=3,
+                learning_rate=0.05,
+                subsample=0.8,
+                random_state=42,
+            )
+            sample_weight = np.where(y_train == 1, scale_pos, 1.0)
+            self.tree_model.fit(X_train, y_train, sample_weight=sample_weight)
 
     def predict_proba(
         self,

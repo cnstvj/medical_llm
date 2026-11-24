@@ -87,12 +87,15 @@ def evaluate_multimodal_fold(
 
     best_threshold = 0.5
     best_f1 = 0.0
+    best_prec = 0.0
 
     for threshold in np.arange(0.05, 0.96, 0.05):
         preds = [1 if p > threshold else 0 for p in probs_arr]
         f1 = f1_score(labels_arr, preds, zero_division=0)
-        if f1 > best_f1:
+        p = precision_score(labels_arr, preds, zero_division=0)
+        if f1 > best_f1 or (f1 == best_f1 and p > best_prec) or (f1 == best_f1 and p == best_prec and abs(threshold - 0.5) < abs(best_threshold - 0.5)):
             best_f1 = f1
+            best_prec = p
             best_threshold = threshold
 
     preds = [1 if p > best_threshold else 0 for p in probs_arr]
@@ -262,7 +265,7 @@ def train_multimodal_fold(
 
     # Optional Stage 1: Unsupervised Self-Supervised Pretraining
     if getattr(config, "enable_unsupervised_pretraining", False):
-        unsupervised_epochs = getattr(config, "unsupervised_epochs", 3)
+        unsupervised_epochs = getattr(config, "unsupervised_epochs", 10)
         pretrainer = train_unsupervised_stage(
             train_labs, vocab, config=config, epochs=unsupervised_epochs, device=device
         )
@@ -280,6 +283,7 @@ def train_multimodal_fold(
         freeze_text_backbone=config.freeze_text_backbone,
         use_lora=use_lora,
         fusion_type=config.fusion_type,
+        fusion_temperature=getattr(config, "fusion_temperature", 1.0),
         use_time2vec=use_time2vec,
     ).to(device)
 
@@ -293,13 +297,27 @@ def train_multimodal_fold(
     pos_weight = torch.tensor([num_negative / max(num_positive, 1)], dtype=torch.float32, device=device)
 
     if loss_function == "poly_focal":
-        criterion = Poly1FocalLoss(alpha=0.6, gamma=2.0, epsilon=1.0)
+        criterion = Poly1FocalLoss(
+            alpha=getattr(config, "poly_alpha", 0.6),
+            gamma=getattr(config, "poly_gamma", 2.0),
+            epsilon=getattr(config, "poly_epsilon", 1.0),
+        )
     elif loss_function == "focal":
-        criterion = FocalLoss(alpha=0.6, gamma=2.0)
+        criterion = FocalLoss(alpha=getattr(config, "poly_alpha", 0.6), gamma=getattr(config, "poly_gamma", 2.0))
     else:
         criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
 
-    optimizer = optim.AdamW(model.parameters(), lr=config.learning_rate, weight_decay=config.weight_decay)
+    # Differential learning rate: preserve pretrained text representations with text_learning_rate
+    text_lr = getattr(config, "text_learning_rate", 2e-5)
+    base_lr = config.learning_rate
+    bert_params = [p for n, p in model.named_parameters() if "text_encoder.bert" in n and p.requires_grad]
+    other_params = [p for n, p in model.named_parameters() if "text_encoder.bert" not in n and p.requires_grad]
+    param_groups = [
+        {"params": other_params, "lr": base_lr},
+        {"params": bert_params, "lr": text_lr},
+    ] if bert_params else list(model.parameters())
+
+    optimizer = optim.AdamW(param_groups, weight_decay=config.weight_decay)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=config.max_epochs)
 
     best_auc = -1.0
@@ -358,18 +376,19 @@ def train_multimodal_fold(
         rl_epochs = getattr(config, "rl_epochs", 2)
         policy = train_rl_stage(model, train_loader, config=config, epochs=rl_epochs, device=device)
         print("  [RL Complete] Policy gradient optimization aligned with clinical utility reward.", flush=True)
+        # Persist updated post-RL weights to checkpoint
+        torch.save(
+            {
+                "model_state_dict": model.state_dict(),
+                "vocab": vocab,
+                "is_multimodal": True,
+            },
+            f"best_fold_{fold}.pth",
+        )
 
     # If ensemble enabled and tabular features provided, blend transformer + GBDT predictions
     if use_ensemble and X_train_tab is not None and X_test_tab is not None:
         model.eval()
-        train_probs = []
-        with torch.no_grad():
-            for b in train_loader:
-                l_i, l_m = b["lab_ids"].to(device), b["lab_mask"].to(device)
-                t_i, t_m = b["text_ids"].to(device), b["text_mask"].to(device)
-                dt = b["delta_times"].to(device) if "delta_times" in b else None
-                train_probs.extend(torch.sigmoid(model(l_i, l_m, t_i, t_m, delta_times=dt)).cpu().numpy().tolist())
-
         test_probs = []
         with torch.no_grad():
             for b in test_loader:
@@ -378,7 +397,11 @@ def train_multimodal_fold(
                 dt = b["delta_times"].to(device) if "delta_times" in b else None
                 test_probs.extend(torch.sigmoid(model(l_i, l_m, t_i, t_m, delta_times=dt)).cpu().numpy().tolist())
 
-        ensemble = ClinicalEnsemble(tree_type=getattr(config, "ensemble_tree", "xgboost"))
+        ensemble = ClinicalEnsemble(
+            transformer_weight=getattr(config, "ensemble_transformer_weight", 0.55),
+            tree_weight=getattr(config, "ensemble_tree_weight", 0.45),
+            tree_type=getattr(config, "ensemble_tree", "xgboost"),
+        )
         ensemble.fit_tree(X_train_tab, np.array(train_labels))
         blended_test_probs = ensemble.predict_proba(np.array(test_probs), X_test_tab)
 
@@ -398,11 +421,14 @@ def train_multimodal_fold(
 
         best_threshold = 0.5
         best_f1 = 0.0
+        best_prec = 0.0
         for th in np.arange(0.05, 0.96, 0.05):
             preds = [1 if p > th else 0 for p in blended_test_probs]
             f = f1_score(y_true, preds, zero_division=0)
-            if f > best_f1:
+            p = precision_score(y_true, preds, zero_division=0)
+            if f > best_f1 or (f == best_f1 and p > best_prec) or (f == best_f1 and p == best_prec and abs(th - 0.5) < abs(best_threshold - 0.5)):
                 best_f1 = f
+                best_prec = p
                 best_threshold = th
 
         preds = [1 if p > best_threshold else 0 for p in blended_test_probs]
@@ -671,8 +697,9 @@ def run_cross_validation(
             )
             fold_vocab = build_vocab(train_labs)
 
-            X_train_tab, _, _ = extract_tabular_features(fold_train_adm, fold_train_labevents, reports)
-            X_test_tab, _, _ = extract_tabular_features(fold_test_adm, fold_test_labevents, reports)
+            X_train_tab, _, feature_names = extract_tabular_features(fold_train_adm, fold_train_labevents, reports)
+            train_itemids = [int(fn.split("_")[1]) for fn in feature_names if fn.startswith("lab_") and fn.endswith("_min")]
+            X_test_tab, _, _ = extract_tabular_features(fold_test_adm, fold_test_labevents, reports, itemids=train_itemids)
 
             auc, auprc, brier, f1, precision, recall, _ = train_multimodal_fold(
                 train_labs, train_texts, train_lbls,
@@ -708,11 +735,11 @@ def run_cross_validation(
     print("=" * 60, flush=True)
     print(f"FINAL LEAK-FREE CROSS-VALIDATION RESULTS - {config.experiment_mode} (Multi-Modal: {config.use_multimodal_nlp})", flush=True)
     print("=" * 60, flush=True)
-    print(f"Mean AUROC       : {np.mean(aucs):.4f} ± {np.std(aucs):.4f}", flush=True)
+    print(f"Mean AUROC       : {np.mean(aucs):.4f} +/- {np.std(aucs):.4f}", flush=True)
     if config.use_multimodal_nlp and auprcs:
-        print(f"Mean AUPRC       : {np.mean(auprcs):.4f} ± {np.std(auprcs):.4f}", flush=True)
-        print(f"Mean Brier Score : {np.mean(briers):.4f} ± {np.std(briers):.4f}", flush=True)
-    print(f"Mean F1          : {np.mean(f1s):.4f} ± {np.std(f1s):.4f}", flush=True)
+        print(f"Mean AUPRC       : {np.mean(auprcs):.4f} +/- {np.std(auprcs):.4f}", flush=True)
+        print(f"Mean Brier Score : {np.mean(briers):.4f} +/- {np.std(briers):.4f}", flush=True)
+    print(f"Mean F1          : {np.mean(f1s):.4f} +/- {np.std(f1s):.4f}", flush=True)
     print(f"Mean Precision   : {np.mean(precisions):.4f}", flush=True)
     print(f"Mean Recall      : {np.mean(recalls):.4f}", flush=True)
 

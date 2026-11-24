@@ -42,6 +42,7 @@ class PipelineConfig:
     text_max_len: int = 256
     text_embedding_dim: int = 768
     fusion_type: str = "cross_attention"  # "concat", "gated", "cross_attention"
+    fusion_temperature: float = 1.0
     freeze_text_backbone: bool = False
     text_learning_rate: float = 2e-5
     use_lora: bool = True
@@ -49,11 +50,16 @@ class PipelineConfig:
     use_time2vec: bool = True
     time_dim: int = 16
     loss_function: str = "poly_focal"  # "bce", "focal", "poly_focal"
+    poly_alpha: float = 0.6
+    poly_gamma: float = 2.0
+    poly_epsilon: float = 1.0
     use_ensemble: bool = True
     ensemble_tree: str = "xgboost"  # "xgboost", "lightgbm"
+    ensemble_transformer_weight: float = 0.55
+    ensemble_tree_weight: float = 0.45
     # Unified 3-Stage Learning Pipeline (Supervised, Unsupervised, Reinforcement)
     enable_unsupervised_pretraining: bool = False
-    unsupervised_epochs: int = 5
+    unsupervised_epochs: int = 10
     enable_rl_policy_tuning: bool = False
     rl_epochs: int = 3
 
@@ -144,14 +150,20 @@ def parse_pipeline_args(
         text_max_len=base.text_max_len,
         text_embedding_dim=base.text_embedding_dim,
         fusion_type=base.fusion_type,
+        fusion_temperature=base.fusion_temperature,
         freeze_text_backbone=base.freeze_text_backbone,
         use_lora=base.use_lora,
         lora_r=base.lora_r,
         use_time2vec=base.use_time2vec,
         time_dim=base.time_dim,
         loss_function=parsed.loss or base.loss_function,
+        poly_alpha=base.poly_alpha,
+        poly_gamma=base.poly_gamma,
+        poly_epsilon=base.poly_epsilon,
         use_ensemble=not parsed.no_ensemble if parsed.no_ensemble else base.use_ensemble,
         ensemble_tree=base.ensemble_tree,
+        ensemble_transformer_weight=base.ensemble_transformer_weight,
+        ensemble_tree_weight=base.ensemble_tree_weight,
         enable_unsupervised_pretraining=parsed.unsupervised or parsed.unified_3stage or base.enable_unsupervised_pretraining,
         unsupervised_epochs=parsed.unsupervised_epochs or base.unsupervised_epochs,
         enable_rl_policy_tuning=parsed.rl or parsed.unified_3stage or base.enable_rl_policy_tuning,

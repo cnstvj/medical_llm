@@ -23,15 +23,28 @@ def train_unsupervised_stage(
     raw_sequences: List[List[str]],
     vocab: Dict[str, int],
     config: PipelineConfig = DEFAULT_CONFIG,
-    epochs: int = 5,
+    epochs: int = 10,
     device: Optional[torch.device] = None,
 ) -> MaskedTrajectoryPretrainer:
-    """Stage 1: Self-supervised pretraining on unlabeled trajectories."""
+    """Stage 1: Self-supervised pretraining on unlabeled trajectories with dynamic masking and windowing."""
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    print(f"\n[STAGE 1: UNSUPERVISED PRETRAINING] Running {epochs} epochs of Masked Trajectory Modeling...", flush=True)
-    dataset = MaskedTrajectoryDataset(raw_sequences, vocab, mask_prob=0.15, max_len=config.max_len)
+    # Segment long patient trajectories into overlapping windows so all lab events are learned
+    chunked_sequences: List[List[str]] = []
+    chunk_size = max(config.max_len - 2, 16)
+    stride = max(chunk_size // 2, 8)
+    for seq in raw_sequences:
+        if len(seq) <= chunk_size:
+            chunked_sequences.append(seq)
+        else:
+            for start in range(0, len(seq), stride):
+                chunk = seq[start : start + chunk_size]
+                if len(chunk) >= 5:
+                    chunked_sequences.append(chunk)
+
+    print(f"\n[STAGE 1: UNSUPERVISED PRETRAINING] Running {epochs} epochs of Masked Trajectory Modeling on {len(chunked_sequences)} trajectory windows...", flush=True)
+    dataset = MaskedTrajectoryDataset(chunked_sequences, vocab, mask_prob=(0.15, 0.20), max_len=config.max_len)
     loader = DataLoader(dataset, batch_size=config.batch_size, shuffle=True)
 
     pretrainer = MaskedTrajectoryPretrainer(
@@ -71,14 +84,22 @@ def train_rl_stage(
     config: PipelineConfig = DEFAULT_CONFIG,
     epochs: int = 3,
     device: Optional[torch.device] = None,
+    reward_fn: Optional[ClinicalRewardFunction] = None,
 ) -> ClinicalPolicyGradient:
     """Stage 3: Reinforcement learning policy optimization using clinical utility reward."""
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     print(f"\n[STAGE 3: REINFORCEMENT LEARNING] Fine-tuning policy gradient for {epochs} epochs...", flush=True)
-    policy = ClinicalPolicyGradient(backbone_model=model).to(device)
-    optimizer = optim.AdamW(policy.parameters(), lr=config.learning_rate * 0.1, weight_decay=config.weight_decay)
+    policy = ClinicalPolicyGradient(backbone_model=model, reward_fn=reward_fn).to(device)
+
+    # Freeze text encoder backbone during policy tuning to protect pretrained linguistic weights
+    for param in model.text_encoder.parameters():
+        param.requires_grad = False
+
+    # Optimize fusion and classifier layers with fine-tuning learning rate
+    trainable_params = [p for p in policy.parameters() if p.requires_grad]
+    optimizer = optim.AdamW(trainable_params, lr=config.learning_rate * 0.05, weight_decay=config.weight_decay)
 
     for epoch in range(epochs):
         policy.train()
@@ -99,9 +120,14 @@ def train_rl_stage(
             rl_loss = policy.compute_policy_loss(log_probs, actions, y)
 
             rl_loss.backward()
+            torch.nn.utils.clip_grad_norm_(trainable_params, max_norm=1.0)
             optimizer.step()
             total_loss += rl_loss.item()
 
         print(f"  RL Policy Epoch {epoch+1}/{epochs} - Policy Gradient Loss: {total_loss:.4f}", flush=True)
+
+    # Restore gradients for all parameters
+    for param in model.text_encoder.parameters():
+        param.requires_grad = True
 
     return policy
