@@ -212,3 +212,23 @@ Mean Precision : 0.8333
 Mean Recall    : 0.4500
 ============================================================
 
+
+============================================================
+[2026-11-25 23:47:37] EVENT: 5-FOLD MULTI-MODAL CV RUN
+RUN LABEL: main-3stage-run
+============================================================
+Experiment Mode: FULL | Multi-Modal: True
+Fold 1: AUROC=0.9485 | AUPRC=0.9417 | F1=0.5455 | Precision=1.0000 | Recall=0.3750
+Fold 2: AUROC=0.8309 | AUPRC=0.8333 | F1=0.7692 | Precision=1.0000 | Recall=0.6250
+Fold 3: AUROC=0.8618 | AUPRC=0.8140 | F1=0.7692 | Precision=1.0000 | Recall=0.6250
+Fold 4: AUROC=0.7039 | AUPRC=0.4708 | F1=0.3333 | Precision=0.5000 | Recall=0.2500
+Fold 5: AUROC=0.8750 | AUPRC=0.8105 | F1=0.6154 | Precision=0.8000 | Recall=0.5000
+----------------------------------------
+Mean AUROC     : 0.8440 +/- 0.0800
+Mean AUPRC     : 0.7741 +/- 0.1591
+Mean Brier     : 0.1509 +/- 0.0221
+Mean F1        : 0.6065 +/- 0.1621
+Mean Precision : 0.8600
+Mean Recall    : 0.4750
+============================================================
+

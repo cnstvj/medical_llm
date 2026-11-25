@@ -512,6 +512,7 @@ def train_multimodal_fold(
 
         # Optimize threshold strictly on training fold predictions (0% snooping)
         blended_train_probs = ensemble.predict_proba(train_probs_arr, X_train_tab)
+        opt_threshold = find_optimal_threshold(y_train, blended_train_probs, metric="f1")
         th_metric = getattr(config, "threshold_metric", "f1")
         opt_threshold = find_optimal_threshold(y_train, blended_train_probs, metric=th_metric)
 
@@ -530,6 +531,7 @@ def train_multimodal_fold(
         threshold = opt_threshold
     else:
         # Non-ensemble: optimize threshold strictly on training predictions
+        opt_threshold = find_optimal_threshold(y_train, train_probs_arr, metric="f1")
         th_metric = getattr(config, "threshold_metric", "f1")
         opt_threshold = find_optimal_threshold(y_train, train_probs_arr, metric=th_metric)
         auc, auprc, brier, f1, precision, recall, threshold, cm = evaluate_multimodal_fold(
