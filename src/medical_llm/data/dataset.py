@@ -11,14 +11,87 @@ from torch.utils.data import Dataset, DataLoader
 from medical_llm.config import DEFAULT_CONFIG
 
 
+def _truncate_preserving_demographics_and_recent(
+    seq: List[str],
+    max_content_len: int,
+    d_times: Optional[List[float]] = None,
+) -> Tuple[List[str], Optional[List[float]]]:
+    """
+    Truncates a sequence to `max_content_len` while preserving:
+    1. Admission demographic prefix (up to and including '[SEP]' if present near the start).
+    2. The most recent (tail) lab trajectory events so acute pre-outcome deterioration is retained.
+    """
+    if len(seq) <= max_content_len:
+        return seq, d_times
+
+    sep_idx = -1
+    search_limit = min(10, len(seq))
+    for i in range(search_limit):
+        if seq[i] == "[SEP]":
+            sep_idx = i
+            break
+
+    if sep_idx != -1 and (sep_idx + 1) < max_content_len:
+        prefix_len = sep_idx + 1
+        tail_budget = max_content_len - prefix_len
+        new_seq = seq[:prefix_len] + seq[-tail_budget:]
+        if d_times is not None:
+            padded_dt = list(d_times[:len(seq)])
+            if len(padded_dt) < len(seq):
+                padded_dt += [0.0] * (len(seq) - len(padded_dt))
+            new_dt = padded_dt[:prefix_len] + padded_dt[-tail_budget:]
+            return new_seq, new_dt
+        return new_seq, None
+
+    # No [SEP] prefix found: keep the most recent tokens
+    new_seq = seq[-max_content_len:]
+    if d_times is not None:
+        padded_dt = list(d_times[:len(seq)])
+        if len(padded_dt) < len(seq):
+            padded_dt += [0.0] * (len(seq) - len(padded_dt))
+        return new_seq, padded_dt[-max_content_len:]
+    return new_seq, None
+
+
+def _resolve_token_id(
+    token: str,
+    vocab: Dict[str, int],
+    unk_dropout: float = 0.0,
+) -> int:
+    """Maps token to vocab ID with optional training-time UNK dropout and clinical backoff."""
+    unk_id = vocab.get("[UNK]", 1)
+    if unk_dropout > 0.0 and token not in ("[PAD]", "[CLS]", "[SEP]", "[REPORT_START]", "[UNK]"):
+        if random.random() < unk_dropout:
+            return unk_id
+
+    if token in vocab:
+        return vocab[token]
+
+    if token.startswith("LAB_"):
+        if "ABNORMAL" in token.upper() and "LAB_UNKNOWN_ABNORMAL" in vocab:
+            return vocab["LAB_UNKNOWN_ABNORMAL"]
+        if "LAB_UNKNOWN_NORMAL" in vocab:
+            return vocab["LAB_UNKNOWN_NORMAL"]
+
+    return unk_id
+
+
 class MedicalDataset(Dataset):
     """PyTorch Dataset for tokenized clinical sequence inputs."""
 
-    def __init__(self, sequences: List[List[str]], labels: List[int], vocab: Dict[str, int], max_len: int = 512):
+    def __init__(
+        self,
+        sequences: List[List[str]],
+        labels: List[int],
+        vocab: Dict[str, int],
+        max_len: int = 512,
+        unk_dropout: float = 0.0,
+    ):
         self.sequences = sequences
         self.labels = labels
         self.vocab = vocab
         self.max_len = max_len
+        self.unk_dropout = unk_dropout
 
     def __len__(self) -> int:
         return len(self.sequences)
@@ -27,11 +100,9 @@ class MedicalDataset(Dataset):
         seq = self.sequences[idx]
         label = self.labels[idx]
 
-        seq_ids = [self.vocab.get(token, self.vocab["[UNK]"]) for token in seq]
-
-        # Preserve demographics and early admission trajectory (truncate tail if exceeding max_len)
-        if len(seq_ids) > self.max_len - 1:
-            seq_ids = seq_ids[:(self.max_len - 1)]
+        # Preserve demographics and most recent lab trajectory
+        seq_trunc, _ = _truncate_preserving_demographics_and_recent(seq, self.max_len - 1)
+        seq_ids = [_resolve_token_id(token, self.vocab, unk_dropout=self.unk_dropout) for token in seq_trunc]
 
         seq_ids = [self.vocab["[CLS]"]] + seq_ids
 
@@ -59,6 +130,7 @@ class MultiModalMedicalDataset(Dataset):
         max_lab_len: int = 512,
         max_text_len: int = 256,
         delta_times: Optional[List[List[float]]] = None,
+        unk_dropout: float = 0.0,
     ):
         self.lab_sequences = lab_sequences
         self.clinical_texts = clinical_texts
@@ -68,6 +140,7 @@ class MultiModalMedicalDataset(Dataset):
         self.max_lab_len = max_lab_len
         self.max_text_len = max_text_len
         self.delta_times = delta_times
+        self.unk_dropout = unk_dropout
 
     def __len__(self) -> int:
         return len(self.labels)
@@ -75,22 +148,20 @@ class MultiModalMedicalDataset(Dataset):
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
         # 1. Structured lab sequence
         seq = self.lab_sequences[idx]
-        seq_ids = [self.vocab.get(token, self.vocab.get("[UNK]", 1)) for token in seq]
-
         d_times = self.delta_times[idx] if self.delta_times is not None and idx < len(self.delta_times) else None
 
-        if len(seq_ids) > self.max_lab_len - 1:
-            seq_ids = seq_ids[:(self.max_lab_len - 1)]
-            if d_times is not None:
-                d_times = d_times[:(self.max_lab_len - 1)]
+        seq_trunc, d_times_trunc = _truncate_preserving_demographics_and_recent(
+            seq, self.max_lab_len - 1, d_times=d_times
+        )
+        seq_ids = [_resolve_token_id(token, self.vocab, unk_dropout=self.unk_dropout) for token in seq_trunc]
 
         cls_id = self.vocab.get("[CLS]", 2)
         pad_id = self.vocab.get("[PAD]", 0)
 
         seq_ids = [cls_id] + seq_ids
-        if d_times is not None:
+        if d_times_trunc is not None:
             curr_len = len(seq_ids) - 1
-            sliced_d_times = list(d_times[:curr_len])
+            sliced_d_times = list(d_times_trunc[:curr_len])
             if len(sliced_d_times) < curr_len:
                 sliced_d_times += [0.0] * (curr_len - len(sliced_d_times))
             times_list = [0.0] + sliced_d_times
@@ -265,7 +336,15 @@ def train_test_split_custom(
 
 def build_vocab(train_sequences: List[List[str]]) -> Dict[str, int]:
     """Constructs vocabulary dictionary mapping token strings to integer indices based ONLY on train sequences."""
-    vocab = {"[PAD]": 0, "[CLS]": 1, "[SEP]": 2, "[UNK]": 3, "[REPORT_START]": 4}
+    vocab = {
+        "[PAD]": 0,
+        "[CLS]": 1,
+        "[SEP]": 2,
+        "[UNK]": 3,
+        "[REPORT_START]": 4,
+        "LAB_UNKNOWN_NORMAL": 5,
+        "LAB_UNKNOWN_ABNORMAL": 6,
+    }
     idx = len(vocab)
 
     for seq in train_sequences:

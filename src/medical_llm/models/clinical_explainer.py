@@ -12,6 +12,8 @@ from medical_llm.semantic.representation import SemanticRepresentation
 from medical_llm.semantic.encoder import SemanticTransformerEncoder
 from medical_llm.semantic.decoder import SemanticTransformerDecoder
 from medical_llm.semantic.validator import ExplanationValidator, ValidationResult
+from medical_llm.utils.confidence import assess_prediction_confidence
+from medical_llm.utils.units import UnitConversionReport
 
 
 class ClinicalExplainer:
@@ -53,12 +55,15 @@ class ClinicalExplainer:
         vocab: Optional[Dict[str, int]] = None,
         device: Optional[torch.device] = None,
         validate: bool = True,
+        unit_report: Optional[UnitConversionReport] = None,
+        extreme_value_rate: float = 0.0,
     ) -> Dict[str, Any]:
         """
         Synthesizes a structured clinical rationale for a patient prediction using the
         Semantic Communication Pipeline:
         Technical Tokens -> Semantic Transformer Encoder -> SemanticRepresentation
         -> Semantic Transformer Decoder -> Explanation Validator -> Clinician Explanation.
+        Always includes a CONFIDENCE flag ("HIGH", "MEDIUM", or "LOW").
         """
         encoder, decoder, _ = cls.get_components()
 
@@ -83,6 +88,17 @@ class ClinicalExplainer:
 
         tier = cls.stratify_risk(probability)
 
+        # 4. Assess prediction confidence & OOD / unit integrity
+        conf = assess_prediction_confidence(
+            lab_tokens=lab_tokens,
+            vocab=vocab,
+            clinical_text=clinical_text,
+            probability=probability,
+            threshold=threshold,
+            unit_report=unit_report,
+            extreme_value_rate=extreme_value_rate,
+        )
+
         # Extract acute lab anomalies formatted for backward compatibility
         acute_labs = []
         for f in semantic_rep.clinical_findings:
@@ -92,6 +108,11 @@ class ClinicalExplainer:
             # Backward-compatible fields
             "predicted_risk": float(probability),
             "risk_tier": tier,
+            "confidence": conf["confidence"],
+            "confidence_score": conf["confidence_score"],
+            "confidence_reasons": conf["reasons"],
+            "unit_warnings": conf["warnings"],
+            "ood_metrics": conf,
             "acute_lab_anomalies": acute_labs,
             "text_clinical_triggers": semantic_rep.text_evidence.trigger_keywords,
             "clinical_narrative": narrative,

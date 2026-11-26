@@ -232,3 +232,299 @@ Mean Precision : 0.8600
 Mean Recall    : 0.4750
 ============================================================
 
+
+============================================================
+[2026-11-26 18:52:41] EVENT: 5-FOLD MULTI-MODAL CV RUN
+RUN LABEL: Verify_InnerVal_Units_Confidence
+============================================================
+Experiment Mode: FULL | Multi-Modal: True
+Fold 1: AUROC=0.3750 | AUPRC=0.4132 | F1=0.3333 | Precision=0.5000 | Recall=0.2500
+Fold 2: AUROC=0.3333 | AUPRC=0.3917 | F1=0.0000 | Precision=0.0000 | Recall=0.0000
+Fold 3: AUROC=0.5714 | AUPRC=0.5821 | F1=0.3333 | Precision=0.5000 | Recall=0.2500
+Fold 4: AUROC=0.7222 | AUPRC=0.7917 | F1=0.6667 | Precision=0.6667 | Recall=0.6667
+Fold 5: AUROC=0.4800 | AUPRC=0.6857 | F1=0.5714 | Precision=1.0000 | Recall=0.4000
+----------------------------------------
+Mean AUROC     : 0.4964 +/- 0.1402
+Mean AUPRC     : 0.5729 +/- 0.1543
+Mean Brier     : 0.2475 +/- 0.0282
+Mean F1        : 0.3810 +/- 0.2313
+Mean Precision : 0.5333
+Mean Recall    : 0.3133
+============================================================
+
+
+============================================================
+[2026-11-26 18:52:50] EVENT: TEST EVALUATION RUN (DUMMY DATASET)
+============================================================
+
+Found 5 saved model(s): best_fold_1.pth, best_fold_2.pth, best_fold_3.pth, best_fold_4.pth, best_fold_5.pth
+
+Dataset : 129 sequences  |  40 deaths  |  89 alive
+
+[best_fold_1] Evaluating strictly on 0 held-out test admission(s) (0% train overlap).
+[best_fold_1] WARNING: 0 matching test admissions found in sequence_dataset.json; skipping.
+[best_fold_2] Evaluating strictly on 0 held-out test admission(s) (0% train overlap).
+[best_fold_2] WARNING: 0 matching test admissions found in sequence_dataset.json; skipping.
+[best_fold_3] Evaluating strictly on 0 held-out test admission(s) (0% train overlap).
+[best_fold_3] WARNING: 0 matching test admissions found in sequence_dataset.json; skipping.
+[best_fold_4] Evaluating strictly on 0 held-out test admission(s) (0% train overlap).
+[best_fold_4] WARNING: 0 matching test admissions found in sequence_dataset.json; skipping.
+[best_fold_5] Evaluating strictly on 0 held-out test admission(s) (0% train overlap).
+[best_fold_5] WARNING: 0 matching test admissions found in sequence_dataset.json; skipping.
+
+
+==================================================
+SEMANTIC COMMUNICATION LAYER EVALUATION
+==================================================
+Samples Evaluated         : 20
+Semantic Preservation     : 100.0%
+Unsupported Claim Rate    : 0.0%
+Directional Accuracy      : 100.0%
+Uncertainty Coverage      : 100.0%
+Validation Pass Rate      : 100.0%
+Clinical Faithfulness Ind : 1.0000
+
+--- Sample Semantic Communication Output (Index 0) ---
+Summary    : Model identifies low-risk trajectory with stable baseline measurements: Lactate (baseline), Laboratory Test 51146 (low), Laboratory Test 51200 (low) occurring over acute intervals under 6 hours.
+Explanation: The model estimates a low risk of in-hospital mortality (15.0%). The main laboratory findings include stable lactate (decile Q7), reduced laboratory test 51146 (decile Q1), reduced laboratory test 51200 (decile Q1), elevated hematocrit (decile Q9), and elevated hemoglobin (decile Q9). These physiological measurements occurred within acute intervals under 6 hours. The physiological trajectory does not show immediate critical deviation from cohort baseline. The available information does not establish a specific diagnosis. Statistical decile rankings reflect cohort distribution rather than absolute pathological thresholds. This result should be interpreted alongside the patient's current bedside clinical condition.
+
+Done.
+
+
+============================================================
+[2026-11-26 18:55:22] EVENT: TEST EVALUATION RUN (DUMMY DATASET)
+============================================================
+
+Found 5 saved model(s): best_fold_1.pth, best_fold_2.pth, best_fold_3.pth, best_fold_4.pth, best_fold_5.pth
+
+Dataset : 129 sequences  |  40 deaths  |  89 alive
+
+[best_fold_1] Evaluating strictly on 10 held-out test admission(s) (0% train overlap).
+
+========================================
+BEST_FOLD_1 RESULTS
+========================================
+AUROC     : 0.4167
+F1        : 0.0000
+Precision : 0.0000
+Recall    : 0.0000
+Threshold : 0.50
+
+Confusion Matrix
+[[6 0]
+ [4 0]]
+[best_fold_2] Evaluating strictly on 10 held-out test admission(s) (0% train overlap).
+
+========================================
+BEST_FOLD_2 RESULTS
+========================================
+AUROC     : 0.5417
+F1        : 0.0000
+Precision : 0.0000
+Recall    : 0.0000
+Threshold : 0.50
+
+Confusion Matrix
+[[6 0]
+ [4 0]]
+[best_fold_3] Evaluating strictly on 11 held-out test admission(s) (0% train overlap).
+
+========================================
+BEST_FOLD_3 RESULTS
+========================================
+AUROC     : 0.7143
+F1        : 0.0000
+Precision : 0.0000
+Recall    : 0.0000
+Threshold : 0.50
+
+Confusion Matrix
+[[7 0]
+ [4 0]]
+[best_fold_4] Evaluating strictly on 9 held-out test admission(s) (0% train overlap).
+
+========================================
+BEST_FOLD_4 RESULTS
+========================================
+AUROC     : 0.2778
+F1        : 0.0000
+Precision : 0.0000
+Recall    : 0.0000
+Threshold : 0.50
+
+Confusion Matrix
+[[6 0]
+ [3 0]]
+[best_fold_5] Evaluating strictly on 10 held-out test admission(s) (0% train overlap).
+
+========================================
+BEST_FOLD_5 RESULTS
+========================================
+AUROC     : 0.6000
+F1        : 0.0000
+Precision : 0.0000
+Recall    : 0.0000
+Threshold : 0.50
+
+Confusion Matrix
+[[5 0]
+ [5 0]]
+
+
+==================================================
+ENSEMBLE SUMMARY (5 models)
+==================================================
+Mean AUROC     : 0.5101 +/- 0.1506
+Mean F1        : 0.0000 +/- 0.0000
+Mean Precision : 0.0000
+Mean Recall    : 0.0000
+Confidence Dist: HIGH=50, MEDIUM=0, LOW=0
+
+
+==================================================
+SEMANTIC COMMUNICATION LAYER EVALUATION
+==================================================
+Samples Evaluated         : 20
+Semantic Preservation     : 100.0%
+Unsupported Claim Rate    : 0.0%
+Directional Accuracy      : 100.0%
+Uncertainty Coverage      : 100.0%
+Validation Pass Rate      : 100.0%
+Clinical Faithfulness Ind : 1.0000
+
+--- Sample Semantic Communication Output (Index 0) ---
+CONFIDENCE : HIGH (Score: 0.95)
+Summary    : Model identifies moderate-risk trajectory with salient findings: Laboratory Test 50815 (high), Laboratory Test 50810 (low), Laboratory Test 50816 (high) occurring over extended intervals spanning multiple hours to days.
+Explanation: The model estimates an elevated/moderate risk of in-hospital mortality (48.7%). The main laboratory findings include elevated laboratory test 50815 (decile Q8), reduced laboratory test 50810 (decile Q0), elevated laboratory test 50816 (decile Q8), reduced lactate (decile Q0), and elevated laboratory test 50819 (decile Q8). These physiological measurements occurred within extended intervals spanning multiple hours to days. These deviations may indicate acute physiological stress or organ strain. The available information does not establish a specific diagnosis. Statistical decile rankings reflect cohort distribution rather than absolute pathological thresholds. This result should be interpreted alongside the patient's current bedside clinical condition.
+
+Done.
+
+
+============================================================
+[2026-11-26 19:00:52] EVENT: 5-FOLD MULTI-MODAL CV RUN
+RUN LABEL: ood-confidence-units-clean
+============================================================
+Experiment Mode: FULL | Multi-Modal: True
+Fold 1: AUROC=0.8971 | AUPRC=0.8534 | F1=0.6087 | Precision=0.4667 | Recall=0.8750
+Fold 2: AUROC=0.8456 | AUPRC=0.8449 | F1=0.7143 | Precision=0.8333 | Recall=0.6250
+Fold 3: AUROC=0.9474 | AUPRC=0.8744 | F1=0.7143 | Precision=0.8333 | Recall=0.6250
+Fold 4: AUROC=0.6053 | AUPRC=0.3946 | F1=0.4762 | Precision=0.3846 | Recall=0.6250
+Fold 5: AUROC=0.8309 | AUPRC=0.7734 | F1=0.6316 | Precision=0.5455 | Recall=0.7500
+----------------------------------------
+Mean AUROC     : 0.8252 +/- 0.1174
+Mean AUPRC     : 0.7482 +/- 0.1800
+Mean Brier     : 0.1561 +/- 0.0295
+Mean F1        : 0.6290 +/- 0.0875
+Mean Precision : 0.6127
+Mean Recall    : 0.7000
+============================================================
+
+
+============================================================
+[2026-11-26 19:01:37] EVENT: TEST EVALUATION RUN (REAL DATASET)
+============================================================
+
+Found 5 saved model(s): best_fold_1.pth, best_fold_2.pth, best_fold_3.pth, best_fold_4.pth, best_fold_5.pth
+
+Dataset : 129 sequences  |  40 deaths  |  89 alive
+
+[best_fold_1] Evaluating strictly on 25 held-out test admission(s) (0% train overlap).
+
+========================================
+BEST_FOLD_1 RESULTS
+========================================
+AUROC     : 0.5000
+F1        : 0.4848
+Precision : 0.3200
+Recall    : 1.0000
+Threshold : 0.25
+
+Confusion Matrix
+[[ 0 17]
+ [ 0  8]]
+[best_fold_2] Evaluating strictly on 25 held-out test admission(s) (0% train overlap).
+
+========================================
+BEST_FOLD_2 RESULTS
+========================================
+AUROC     : 0.9485
+F1        : 0.8000
+Precision : 0.8571
+Recall    : 0.7500
+Threshold : 0.45
+
+Confusion Matrix
+[[16  1]
+ [ 2  6]]
+[best_fold_3] Evaluating strictly on 27 held-out test admission(s) (0% train overlap).
+
+========================================
+BEST_FOLD_3 RESULTS
+========================================
+AUROC     : 0.6776
+F1        : 0.5000
+Precision : 0.5000
+Recall    : 0.5000
+Threshold : 0.40
+
+Confusion Matrix
+[[15  4]
+ [ 4  4]]
+[best_fold_4] Evaluating strictly on 27 held-out test admission(s) (0% train overlap).
+
+========================================
+BEST_FOLD_4 RESULTS
+========================================
+AUROC     : 0.7237
+F1        : 0.4571
+Precision : 0.2963
+Recall    : 1.0000
+Threshold : 0.25
+
+Confusion Matrix
+[[ 0 19]
+ [ 0  8]]
+[best_fold_5] Evaluating strictly on 25 held-out test admission(s) (0% train overlap).
+
+========================================
+BEST_FOLD_5 RESULTS
+========================================
+AUROC     : 0.8309
+F1        : 0.6087
+Precision : 0.4667
+Recall    : 0.8750
+Threshold : 0.35
+
+Confusion Matrix
+[[9 8]
+ [1 7]]
+
+
+==================================================
+ENSEMBLE SUMMARY (5 models)
+==================================================
+Mean AUROC     : 0.7361 +/- 0.1506
+Mean F1        : 0.5701 +/- 0.1259
+Mean Precision : 0.4880
+Mean Recall    : 0.8250
+Confidence Dist: HIGH=0, MEDIUM=0, LOW=129
+
+
+==================================================
+SEMANTIC COMMUNICATION LAYER EVALUATION
+==================================================
+Samples Evaluated         : 20
+Semantic Preservation     : 100.0%
+Unsupported Claim Rate    : 0.0%
+Directional Accuracy      : 100.0%
+Uncertainty Coverage      : 100.0%
+Validation Pass Rate      : 100.0%
+Clinical Faithfulness Ind : 1.0000
+
+--- Sample Semantic Communication Output (Index 0) ---
+CONFIDENCE : HIGH (Score: 0.94)
+Summary    : Model identifies moderate-risk trajectory with salient findings: Laboratory Test 51251 (low), Laboratory Test 51254 (high), Laboratory Test 51255 (low) occurring over acute intervals under 6 hours.
+Explanation: The model estimates an elevated/moderate risk of in-hospital mortality (41.5%). The main laboratory findings include reduced laboratory test 51251 (decile Q0), elevated laboratory test 51254 (decile Q8), reduced laboratory test 51255 (decile Q0), elevated pt (decile Q9), and elevated ptt (decile Q8). These physiological measurements occurred within acute intervals under 6 hours. These deviations may indicate acute physiological stress or organ strain. The available information does not establish a specific diagnosis. Statistical decile rankings reflect cohort distribution rather than absolute pathological thresholds. This result should be interpreted alongside the patient's current bedside clinical condition.
+
+Done.
+

@@ -31,17 +31,16 @@ def extract_tabular_features(
     Extracts rich clinical tabular summary features per admission:
     - Demographics: Age, Gender, Admission Type
     - Admission Diagnosis Indicators: Sepsis, Pneumonia, Heart Failure, Renal/Liver Disease, etc.
-    - Lab Aggregates: Mean, Std, Min, Max, Count, Delta (first to last) per lab item
-    - Clinical Note metadata: Word count, presence of report
+    - Lab Aggregates: Mean, Min, Max, Count, Delta (first to last) per lab item
+
+    Note: Raw clinical note length/word-count features are intentionally excluded
+    to prevent note-presence mortality leakage.
     """
     feature_rows = []
     labels = []
-    
+
     # Pre-index labevents by hadm_id for speed
     labs_grouped = dict(tuple(labevents_df.groupby("hadm_id")))
-    reports_map = {}
-    if reports_df is not None and "hadm_id" in reports_df.columns:
-        reports_map = dict(zip(reports_df["hadm_id"], reports_df.get("clean_text", [""] * len(reports_df))))
 
     if itemids is not None:
         all_itemids = list(itemids)
@@ -54,7 +53,6 @@ def extract_tabular_features(
     feature_names.extend(list(DIAGNOSIS_INDICATORS.keys()))
     for iid in all_itemids:
         feature_names.extend([f"lab_{iid}_min", f"lab_{iid}_max", f"lab_{iid}_mean", f"lab_{iid}_count", f"lab_{iid}_delta"])
-    feature_names.extend(["note_char_count", "note_word_count"])
 
     for _, adm in admissions_df.iterrows():
         hadm_id = adm["hadm_id"]
@@ -89,12 +87,6 @@ def extract_tabular_features(
                     row_feats.extend([0.0, 0.0, 0.0, 0.0, 0.0])
             else:
                 row_feats.extend([0.0, 0.0, 0.0, 0.0, 0.0])
-
-        # Note stats
-        note = str(reports_map.get(hadm_id, ""))
-        note_chars = float(len(note))
-        note_words = float(len(note.split()))
-        row_feats.extend([note_chars, note_words])
 
         feature_rows.append(row_feats)
         labels.append(int(adm.get("target", 0)))

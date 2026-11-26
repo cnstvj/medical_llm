@@ -11,7 +11,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
-from sklearn.model_selection import StratifiedGroupKFold, GroupShuffleSplit
+from sklearn.model_selection import StratifiedGroupKFold, GroupShuffleSplit, StratifiedShuffleSplit
 from sklearn.metrics import (
     roc_auc_score,
     average_precision_score,
@@ -25,6 +25,7 @@ from sklearn.metrics import (
 from medical_llm.config import DEFAULT_CONFIG, PipelineConfig
 from medical_llm.data.preprocessing import load_raw_tables
 from medical_llm.utils.quantiles import fit_quantiles, apply_quantiles_to_labevents
+from medical_llm.utils.units import fit_unit_registry, normalize_lab_units, UnitConversionReport
 from medical_llm.data.sequence_builder import build_temporal_sequences
 from medical_llm.data.dataset import MedicalDataset, MultiModalMedicalDataset, build_vocab
 from medical_llm.models.transformer import MedicalTransformer
@@ -317,6 +318,24 @@ def build_fold_sequences(
     return sequences, labels
 
 
+def _split_internal_val_indices(labels: List[int], seed: int = 42, val_frac: float = 0.15) -> Tuple[List[int], List[int]]:
+    """Fallback internal stratified split when an explicit validation split is not supplied."""
+    n = len(labels)
+    if n < 6 or len(set(labels)) < 2:
+        # Too small to stratify: use last max(1, n // 5) samples for validation if n >= 2
+        if n >= 2:
+            split = max(1, n - max(1, n // 5))
+            return list(range(split)), list(range(split, n))
+        return list(range(n)), list(range(n))
+    try:
+        sss = StratifiedShuffleSplit(n_splits=1, test_size=val_frac, random_state=seed)
+        tr_idx, val_idx = next(sss.split(np.zeros(n), labels))
+        return tr_idx.tolist(), val_idx.tolist()
+    except Exception:
+        split = max(1, int(n * (1.0 - val_frac)))
+        return list(range(split)), list(range(split, n))
+
+
 def train_multimodal_fold(
     train_labs: List[List[str]],
     train_texts: List[str],
@@ -333,20 +352,55 @@ def train_multimodal_fold(
     X_test_tab: Optional[np.ndarray] = None,
     train_delta_times: Optional[List[List[float]]] = None,
     test_delta_times: Optional[List[List[float]]] = None,
+    val_labs: Optional[List[List[str]]] = None,
+    val_texts: Optional[List[str]] = None,
+    val_labels: Optional[List[int]] = None,
+    val_delta_times: Optional[List[List[float]]] = None,
+    test_hadm_ids: Optional[List[int]] = None,
+    test_subject_ids: Optional[List[int]] = None,
+    unit_registry: Optional[Dict[int, Dict[str, str]]] = None,
+    quantile_map: Optional[Dict[Any, Any]] = None,
+    test_unit_report: Optional[UnitConversionReport] = None,
 ) -> Tuple[float, float, float, float, float, float, float]:
-    """Trains a multi-modal clinical transformer fold model with early stopping, advanced loss, and optional GBDT ensemble."""
+    """Trains a multi-modal clinical transformer fold model with inner-val early stopping, advanced loss, and optional GBDT ensemble."""
+    if val_labs is None or val_texts is None or val_labels is None:
+        tr_idx, val_idx = _split_internal_val_indices(train_labels, seed=config.random_seed + fold)
+        eff_train_labs = [train_labs[i] for i in tr_idx]
+        eff_train_texts = [train_texts[i] for i in tr_idx]
+        eff_train_labels = [train_labels[i] for i in tr_idx]
+        eff_train_deltas = [train_delta_times[i] for i in tr_idx] if train_delta_times is not None else None
+
+        val_labs = [train_labs[i] for i in val_idx]
+        val_texts = [train_texts[i] for i in val_idx]
+        val_labels = [train_labels[i] for i in val_idx]
+        val_delta_times = [train_delta_times[i] for i in val_idx] if train_delta_times is not None else None
+    else:
+        eff_train_labs = train_labs
+        eff_train_texts = train_texts
+        eff_train_labels = train_labels
+        eff_train_deltas = train_delta_times
+
     train_dataset = MultiModalMedicalDataset(
-        train_labs, train_texts, train_labels, vocab, tokenizer=tokenizer,
+        eff_train_labs, eff_train_texts, eff_train_labels, vocab, tokenizer=tokenizer,
         max_lab_len=config.max_len, max_text_len=config.text_max_len,
-        delta_times=train_delta_times,
+        delta_times=eff_train_deltas,
+        unk_dropout=0.05,
+    )
+    val_dataset = MultiModalMedicalDataset(
+        val_labs, val_texts, val_labels, vocab, tokenizer=tokenizer,
+        max_lab_len=config.max_len, max_text_len=config.text_max_len,
+        delta_times=val_delta_times,
+        unk_dropout=0.0,
     )
     test_dataset = MultiModalMedicalDataset(
         test_labs, test_texts, test_labels, vocab, tokenizer=tokenizer,
         max_lab_len=config.max_len, max_text_len=config.text_max_len,
         delta_times=test_delta_times,
+        unk_dropout=0.0,
     )
 
     train_loader = DataLoader(train_dataset, batch_size=config.batch_size, shuffle=True)
+    val_loader = DataLoader(val_dataset, batch_size=config.batch_size)
     test_loader = DataLoader(test_dataset, batch_size=config.batch_size)
 
     use_lora = getattr(config, "use_lora", False)
@@ -358,7 +412,7 @@ def train_multimodal_fold(
     if getattr(config, "enable_unsupervised_pretraining", False):
         unsupervised_epochs = getattr(config, "unsupervised_epochs", 10)
         pretrainer = train_unsupervised_stage(
-            train_labs, vocab, config=config, epochs=unsupervised_epochs, device=device
+            eff_train_labs, vocab, config=config, epochs=unsupervised_epochs, device=device
         )
         print("  [Pretraining Complete] Transferring trajectory weights to Multimodal Transformer.", flush=True)
 
@@ -383,8 +437,8 @@ def train_multimodal_fold(
         model.lab_embedding.load_state_dict(pretrainer.embedding.state_dict())
         model.transformer_encoder.load_state_dict(pretrainer.transformer_encoder.state_dict())
 
-    num_positive = sum(train_labels)
-    num_negative = len(train_labels) - num_positive
+    num_positive = sum(eff_train_labels)
+    num_negative = len(eff_train_labels) - num_positive
     pos_weight = torch.tensor([num_negative / max(num_positive, 1)], dtype=torch.float32, device=device)
 
     if loss_function == "poly_focal":
@@ -437,9 +491,10 @@ def train_multimodal_fold(
 
         scheduler.step()
 
-        val_auc, val_auprc, val_brier, _, _, _, _, _ = evaluate_multimodal_fold(model, test_loader, device)
+        # Monitor inner validation split (NEVER test_loader) for early stopping
+        val_auc, val_auprc, val_brier, _, _, _, _, _ = evaluate_multimodal_fold(model, val_loader, device)
 
-        print(f"Fold {fold} Epoch {epoch+1:2d} Loss={total_loss:.4f} Val_AUROC={val_auc:.4f} Val_AUPRC={val_auprc:.4f}", flush=True)
+        print(f"Fold {fold} Epoch {epoch+1:2d} Loss={total_loss:.4f} InnerVal_AUROC={val_auc:.4f} InnerVal_AUPRC={val_auprc:.4f}", flush=True)
 
         if epoch == 0 or val_auc > best_auc:
             best_auc = val_auc
@@ -449,6 +504,10 @@ def train_multimodal_fold(
                     "model_state_dict": model.state_dict(),
                     "vocab": vocab,
                     "is_multimodal": True,
+                    "test_hadm_ids": test_hadm_ids,
+                    "test_subject_ids": test_subject_ids,
+                    "unit_registry": unit_registry,
+                    "quantile_map": quantile_map,
                 },
                 f"best_fold_{fold}.pth",
             )
@@ -459,7 +518,7 @@ def train_multimodal_fold(
             print(f"Early stopping (Fold {fold})", flush=True)
             break
 
-    checkpoint = torch.load(f"best_fold_{fold}.pth", map_location=device)
+    checkpoint = torch.load(f"best_fold_{fold}.pth", map_location=device, weights_only=False)
     model.load_state_dict(checkpoint["model_state_dict"])
 
     # Optional Stage 3: Reinforcement Learning (Clinical Policy Optimization)
@@ -467,15 +526,6 @@ def train_multimodal_fold(
         rl_epochs = getattr(config, "rl_epochs", 2)
         policy = train_rl_stage(model, train_loader, config=config, epochs=rl_epochs, device=device)
         print("  [RL Complete] Policy gradient optimization aligned with clinical utility reward.", flush=True)
-        # Persist updated post-RL weights to checkpoint
-        torch.save(
-            {
-                "model_state_dict": model.state_dict(),
-                "vocab": vocab,
-                "is_multimodal": True,
-            },
-            f"best_fold_{fold}.pth",
-        )
 
     # Compute model predictions on train set (for leak-free threshold optimization and tree fitting)
     model.eval()
@@ -488,7 +538,7 @@ def train_multimodal_fold(
             dt = b["delta_times"].to(device) if "delta_times" in b else None
             train_probs.extend(torch.sigmoid(model(l_i, l_m, t_i, t_m, delta_times=dt)).cpu().numpy().tolist())
     train_probs_arr = np.array(train_probs)
-    y_train = np.array(train_labels)
+    y_train = np.array(eff_train_labels)
 
     # Compute model predictions on test set
     test_probs = []
@@ -501,8 +551,10 @@ def train_multimodal_fold(
     test_probs_arr = np.array(test_probs)
     y_true = np.array(test_labels)
 
+    th_metric = getattr(config, "threshold_metric", "f1")
+
     # If ensemble enabled and tabular features provided, blend transformer + GBDT predictions
-    if use_ensemble and X_train_tab is not None and X_test_tab is not None:
+    if use_ensemble and X_train_tab is not None and X_test_tab is not None and len(X_train_tab) == len(y_train):
         ensemble = ClinicalEnsemble(
             transformer_weight=getattr(config, "ensemble_transformer_weight", 0.55),
             tree_weight=getattr(config, "ensemble_tree_weight", 0.45),
@@ -512,8 +564,6 @@ def train_multimodal_fold(
 
         # Optimize threshold strictly on training fold predictions (0% snooping)
         blended_train_probs = ensemble.predict_proba(train_probs_arr, X_train_tab)
-        opt_threshold = find_optimal_threshold(y_train, blended_train_probs, metric="f1")
-        th_metric = getattr(config, "threshold_metric", "f1")
         opt_threshold = find_optimal_threshold(y_train, blended_train_probs, metric=th_metric)
 
         # Evaluate on test fold out-of-sample
@@ -531,12 +581,25 @@ def train_multimodal_fold(
         threshold = opt_threshold
     else:
         # Non-ensemble: optimize threshold strictly on training predictions
-        opt_threshold = find_optimal_threshold(y_train, train_probs_arr, metric="f1")
-        th_metric = getattr(config, "threshold_metric", "f1")
         opt_threshold = find_optimal_threshold(y_train, train_probs_arr, metric=th_metric)
         auc, auprc, brier, f1, precision, recall, threshold, cm = evaluate_multimodal_fold(
             model, test_loader, device, threshold=opt_threshold
         )
+
+    # Persist final model state, threshold, and metadata
+    torch.save(
+        {
+            "model_state_dict": model.state_dict(),
+            "vocab": vocab,
+            "is_multimodal": True,
+            "threshold": float(threshold),
+            "test_hadm_ids": test_hadm_ids,
+            "test_subject_ids": test_subject_ids,
+            "unit_registry": unit_registry,
+            "quantile_map": quantile_map,
+        },
+        f"best_fold_{fold}.pth",
+    )
 
     print("\n" + "=" * 40, flush=True)
     print(f"FOLD {fold} MULTI-MODAL RESULTS", flush=True)
@@ -574,9 +637,15 @@ def train_multimodal_fold(
         vocab=vocab,
         device=device,
         validate=True,
+        unit_report=test_unit_report,
     )
     print("\n[SEMANTIC COMMUNICATION RATIONALE (TEST PATIENT SAMPLE)]", flush=True)
     print(f"Risk Tier            : {sample_expl['risk_tier']} (Prob: {sample_prob:.3f})")
+    print(f"CONFIDENCE           : {sample_expl['confidence']} (Score: {sample_expl['confidence_score']:.2f})")
+    if sample_expl["confidence_reasons"]:
+        print(f"Confidence Reasons   : {'; '.join(sample_expl['confidence_reasons'])}")
+    if sample_expl["unit_warnings"]:
+        print(f"Unit Warnings        : {'; '.join(sample_expl['unit_warnings'])}")
     print(f"Clinical Summary     : {sample_expl['clinical_summary']}")
     print(f"Validated Narrative  : {sample_expl['clinical_narrative']}")
     val_status = "PASSED" if sample_expl["validation"] and sample_expl["validation"]["is_valid"] else "FLAGGED"
@@ -594,12 +663,31 @@ def train_fold(
     vocab: dict,
     device: torch.device,
     config: PipelineConfig = DEFAULT_CONFIG,
+    val_sequences: Optional[List[List[str]]] = None,
+    val_labels: Optional[List[int]] = None,
+    test_hadm_ids: Optional[List[int]] = None,
+    test_subject_ids: Optional[List[int]] = None,
+    unit_registry: Optional[Dict[int, Dict[str, str]]] = None,
+    quantile_map: Optional[Dict[Any, Any]] = None,
+    test_unit_report: Optional[UnitConversionReport] = None,
 ) -> Tuple[float, float, float, float]:
-    """Trains a single fold model with cosine annealing and early stopping."""
-    train_dataset = MedicalDataset(train_sequences, train_labels, vocab, max_len=config.max_len)
-    test_dataset = MedicalDataset(test_sequences, test_labels, vocab, max_len=config.max_len)
+    """Trains a single fold model with inner-val early stopping and cosine annealing."""
+    if val_sequences is None or val_labels is None:
+        tr_idx, val_idx = _split_internal_val_indices(train_labels, seed=config.random_seed + fold)
+        eff_train_seqs = [train_sequences[i] for i in tr_idx]
+        eff_train_labels = [train_labels[i] for i in tr_idx]
+        val_sequences = [train_sequences[i] for i in val_idx]
+        val_labels = [train_labels[i] for i in val_idx]
+    else:
+        eff_train_seqs = train_sequences
+        eff_train_labels = train_labels
+
+    train_dataset = MedicalDataset(eff_train_seqs, eff_train_labels, vocab, max_len=config.max_len, unk_dropout=0.05)
+    val_dataset = MedicalDataset(val_sequences, val_labels, vocab, max_len=config.max_len, unk_dropout=0.0)
+    test_dataset = MedicalDataset(test_sequences, test_labels, vocab, max_len=config.max_len, unk_dropout=0.0)
 
     train_loader = DataLoader(train_dataset, batch_size=config.batch_size, shuffle=True)
+    val_loader = DataLoader(val_dataset, batch_size=config.batch_size)
     test_loader = DataLoader(test_dataset, batch_size=config.batch_size)
 
     model = MedicalTransformer(
@@ -612,8 +700,8 @@ def train_fold(
         max_len=config.max_len,
     ).to(device)
 
-    num_positive = sum(train_labels)
-    num_negative = len(train_labels) - num_positive
+    num_positive = sum(eff_train_labels)
+    num_negative = len(eff_train_labels) - num_positive
     pos_weight = torch.tensor([num_negative / max(num_positive, 1)], dtype=torch.float32, device=device)
 
     criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
@@ -641,9 +729,10 @@ def train_fold(
 
         scheduler.step()
 
-        val_auc, _, _, _, _, _ = evaluate_fold(model, test_loader, device)
+        # Monitor inner validation split (NEVER test_loader) for early stopping
+        val_auc, _, _, _, _, _ = evaluate_fold(model, val_loader, device)
 
-        print(f"Fold {fold} Epoch {epoch+1:2d} Loss={total_loss:.4f} Val_AUROC={val_auc:.4f}", flush=True)
+        print(f"Fold {fold} Epoch {epoch+1:2d} Loss={total_loss:.4f} InnerVal_AUROC={val_auc:.4f}", flush=True)
 
         if epoch == 0 or val_auc > best_auc:
             best_auc = val_auc
@@ -653,6 +742,10 @@ def train_fold(
                     "model_state_dict": model.state_dict(),
                     "vocab": vocab,
                     "is_multimodal": False,
+                    "test_hadm_ids": test_hadm_ids,
+                    "test_subject_ids": test_subject_ids,
+                    "unit_registry": unit_registry,
+                    "quantile_map": quantile_map,
                 },
                 f"best_fold_{fold}.pth",
             )
@@ -663,7 +756,7 @@ def train_fold(
             print(f"Early stopping (Fold {fold})", flush=True)
             break
 
-    checkpoint = torch.load(f"best_fold_{fold}.pth", map_location=device)
+    checkpoint = torch.load(f"best_fold_{fold}.pth", map_location=device, weights_only=False)
     model.load_state_dict(checkpoint["model_state_dict"])
 
     # Optional Stage 3: Reinforcement Learning (Clinical Policy Optimization)
@@ -681,11 +774,27 @@ def train_fold(
             x, mask = x.to(device), mask.to(device)
             train_probs.extend(torch.sigmoid(model(x, mask)).cpu().numpy().tolist())
     train_probs_arr = np.array(train_probs)
-    y_train = np.array(train_labels)
+    y_train = np.array(eff_train_labels)
 
-    opt_threshold = find_optimal_threshold(y_train, train_probs_arr, metric="f1")
+    th_metric = getattr(config, "threshold_metric", "f1")
+    opt_threshold = find_optimal_threshold(y_train, train_probs_arr, metric=th_metric)
     auc, f1, precision, recall, threshold, cm = evaluate_fold(
         model, test_loader, device, threshold=opt_threshold
+    )
+
+    # Persist final model state, threshold, and metadata
+    torch.save(
+        {
+            "model_state_dict": model.state_dict(),
+            "vocab": vocab,
+            "is_multimodal": False,
+            "threshold": float(threshold),
+            "test_hadm_ids": test_hadm_ids,
+            "test_subject_ids": test_subject_ids,
+            "unit_registry": unit_registry,
+            "quantile_map": quantile_map,
+        },
+        f"best_fold_{fold}.pth",
     )
 
     print("\n" + "=" * 40, flush=True)
@@ -717,9 +826,15 @@ def train_fold(
         vocab=vocab,
         device=device,
         validate=True,
+        unit_report=test_unit_report,
     )
     print("\n[SEMANTIC COMMUNICATION RATIONALE (TEST PATIENT SAMPLE)]", flush=True)
     print(f"Risk Tier            : {sample_expl['risk_tier']} (Prob: {sample_prob:.3f})")
+    print(f"CONFIDENCE           : {sample_expl['confidence']} (Score: {sample_expl['confidence_score']:.2f})")
+    if sample_expl["confidence_reasons"]:
+        print(f"Confidence Reasons   : {'; '.join(sample_expl['confidence_reasons'])}")
+    if sample_expl["unit_warnings"]:
+        print(f"Unit Warnings        : {'; '.join(sample_expl['unit_warnings'])}")
     print(f"Clinical Summary     : {sample_expl['clinical_summary']}")
     print(f"Validated Narrative  : {sample_expl['clinical_narrative']}")
     val_status = "PASSED" if sample_expl["validation"] and sample_expl["validation"]["is_valid"] else "FLAGGED"
@@ -761,40 +876,74 @@ def run_cross_validation(
         fold_train_adm = admissions.iloc[train_idx]
         fold_test_adm = admissions.iloc[test_idx]
 
-        # ASSERT: zero patient overlap within fold
+        # ASSERT: zero patient overlap within outer fold
         fold_train_sids = set(fold_train_adm["subject_id"])
         fold_test_sids = set(fold_test_adm["subject_id"])
         fold_overlap = fold_train_sids & fold_test_sids
         assert len(fold_overlap) == 0, f"Fold {fold} patient leakage! Overlapping: {fold_overlap}"
 
+        # Carve out inner patient-level validation split from fold_train_adm for early stopping (0% test snooping)
+        inner_sgkf = StratifiedGroupKFold(n_splits=5, shuffle=True, random_state=config.random_seed + fold)
+        inner_tr_idx, inner_val_idx = next(
+            inner_sgkf.split(fold_train_adm, fold_train_adm["target"].values, groups=fold_train_adm["subject_id"].values)
+        )
+        inner_train_adm = fold_train_adm.iloc[inner_tr_idx]
+        inner_val_adm = fold_train_adm.iloc[inner_val_idx]
+
+        inner_train_sids = set(inner_train_adm["subject_id"])
+        inner_val_sids = set(inner_val_adm["subject_id"])
+        assert len(inner_train_sids & inner_val_sids) == 0, f"Fold {fold} inner train/val patient leakage!"
+        assert len(inner_val_sids & fold_test_sids) == 0, f"Fold {fold} inner val/test patient leakage!"
+
         print(
             f"\n--- Fold {fold} ---\n"
-            f"  Train: {len(fold_train_adm)} adm ({len(fold_train_sids)} patients)\n"
-            f"  Test : {len(fold_test_adm)} adm ({len(fold_test_sids)} patients)\n"
-            f"  Patient overlap: {len(fold_overlap)}",
+            f"  Inner Train : {len(inner_train_adm)} adm ({len(inner_train_sids)} patients)\n"
+            f"  Inner Val   : {len(inner_val_adm)} adm ({len(inner_val_sids)} patients)\n"
+            f"  Held-Out Test: {len(fold_test_adm)} adm ({len(fold_test_sids)} patients)\n"
+            f"  Patient overlap (train/val/test): 0",
             flush=True,
         )
 
-        fold_train_labevents = labevents[labevents["hadm_id"].isin(fold_train_adm["hadm_id"])]
+        inner_train_labevents = labevents[labevents["hadm_id"].isin(inner_train_adm["hadm_id"])]
+        inner_val_labevents = labevents[labevents["hadm_id"].isin(inner_val_adm["hadm_id"])]
         fold_test_labevents = labevents[labevents["hadm_id"].isin(fold_test_adm["hadm_id"])]
 
-        # Fit quantiles STRICTLY on fold_train_labevents
-        fold_quantile_map = fit_quantiles(fold_train_labevents)
+        # Fit unit registry & quantiles STRICTLY on inner_train_labevents
+        fold_unit_registry = fit_unit_registry(inner_train_labevents)
+        inner_train_labevents, _ = normalize_lab_units(inner_train_labevents, fold_unit_registry, emit_warnings=False)
+        inner_val_labevents, _ = normalize_lab_units(inner_val_labevents, fold_unit_registry, emit_warnings=False)
+        fold_test_labevents, test_unit_report = normalize_lab_units(fold_test_labevents, fold_unit_registry, emit_warnings=False)
 
-        # Apply fold_quantile_map to both fold train and fold test lab events
-        fold_train_lab_proc = apply_quantiles_to_labevents(fold_train_labevents, fold_quantile_map)
+        if test_unit_report.converted_count > 0 or test_unit_report.unconverted_count > 0:
+            print(
+                f"  [Unit Normalization] Converted: {test_unit_report.converted_count}, "
+                f"Unconverted mismatches (masked): {test_unit_report.unconverted_count}",
+                flush=True,
+            )
+
+        fold_quantile_map = fit_quantiles(inner_train_labevents)
+
+        # Apply fold_quantile_map to inner train, inner val, and held-out test lab events
+        inner_train_lab_proc = apply_quantiles_to_labevents(inner_train_labevents, fold_quantile_map)
+        inner_val_lab_proc = apply_quantiles_to_labevents(inner_val_labevents, fold_quantile_map)
         fold_test_lab_proc = apply_quantiles_to_labevents(fold_test_labevents, fold_quantile_map)
+
+        test_hadm_ids = [int(x) for x in fold_test_adm["hadm_id"].tolist()]
+        test_subject_ids = [int(x) for x in fold_test_adm["subject_id"].tolist()]
 
         if config.use_multimodal_nlp:
             train_labs, train_texts, train_lbls, train_deltas = build_multimodal_fold_data(
-                fold_train_adm, fold_train_lab_proc, reports, experiment_mode=config.experiment_mode, return_delta_times=True
+                inner_train_adm, inner_train_lab_proc, reports, experiment_mode=config.experiment_mode, return_delta_times=True
+            )
+            val_labs, val_texts, val_lbls, val_deltas = build_multimodal_fold_data(
+                inner_val_adm, inner_val_lab_proc, reports, experiment_mode=config.experiment_mode, return_delta_times=True
             )
             test_labs, test_texts, test_lbls, test_deltas = build_multimodal_fold_data(
                 fold_test_adm, fold_test_lab_proc, reports, experiment_mode=config.experiment_mode, return_delta_times=True
             )
             fold_vocab = build_vocab(train_labs)
 
-            X_train_tab, _, feature_names = extract_tabular_features(fold_train_adm, fold_train_labevents, reports)
+            X_train_tab, _, feature_names = extract_tabular_features(inner_train_adm, inner_train_labevents, reports)
             train_itemids = [int(fn.split("_")[1]) for fn in feature_names if fn.startswith("lab_") and fn.endswith("_min")]
             X_test_tab, _, _ = extract_tabular_features(fold_test_adm, fold_test_labevents, reports, itemids=train_itemids)
 
@@ -804,12 +953,19 @@ def run_cross_validation(
                 fold, fold_vocab, tokenizer, device, config=config,
                 X_train_tab=X_train_tab, X_test_tab=X_test_tab,
                 train_delta_times=train_deltas, test_delta_times=test_deltas,
+                val_labs=val_labs, val_texts=val_texts, val_labels=val_lbls, val_delta_times=val_deltas,
+                test_hadm_ids=test_hadm_ids, test_subject_ids=test_subject_ids,
+                unit_registry=fold_unit_registry, quantile_map=fold_quantile_map,
+                test_unit_report=test_unit_report,
             )
             auprcs.append(auprc)
             briers.append(brier)
         else:
             train_seqs, train_lbls = build_fold_sequences(
-                fold_train_adm, fold_train_lab_proc, reports, experiment_mode=config.experiment_mode
+                inner_train_adm, inner_train_lab_proc, reports, experiment_mode=config.experiment_mode
+            )
+            val_seqs, val_lbls = build_fold_sequences(
+                inner_val_adm, inner_val_lab_proc, reports, experiment_mode=config.experiment_mode
             )
             test_seqs, test_lbls = build_fold_sequences(
                 fold_test_adm, fold_test_lab_proc, reports, experiment_mode=config.experiment_mode
@@ -817,7 +973,11 @@ def run_cross_validation(
             fold_vocab = build_vocab(train_seqs)
 
             auc, f1, precision, recall = train_fold(
-                train_seqs, train_lbls, test_seqs, test_lbls, fold, fold_vocab, device, config=config
+                train_seqs, train_lbls, test_seqs, test_lbls, fold, fold_vocab, device, config=config,
+                val_sequences=val_seqs, val_labels=val_lbls,
+                test_hadm_ids=test_hadm_ids, test_subject_ids=test_subject_ids,
+                unit_registry=fold_unit_registry, quantile_map=fold_quantile_map,
+                test_unit_report=test_unit_report,
             )
 
         aucs.append(auc)
